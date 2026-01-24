@@ -1,0 +1,20 @@
+﻿sidekiq-1  | /gems/ruby/3.4.0/gems/sidekiq-7.3.1/lib/sidekiq/processor.rb:132:in 'block in Sidekiq::Processor#dispatch'
+sidekiq-1  | /gems/ruby/3.4.0/gems/sidekiq-7.3.1/lib/sidekiq/job_logger.rb:50:in 'Sidekiq::JobLogger#prepare'
+sidekiq-1  | /gems/ruby/3.4.0/gems/sidekiq-7.3.1/lib/sidekiq/processor.rb:131:in 'Sidekiq::Processor#dispatch'
+sidekiq-1  | /gems/ruby/3.4.0/gems/sidekiq-7.3.1/lib/sidekiq/processor.rb:183:in 'block (2 levels) in Sidekiq::Processor#process'
+sidekiq-1  | /gems/ruby/3.4.0/gems/sidekiq-7.3.1/lib/sidekiq/processor.rb:182:in 'Thread.handle_interrupt'
+sidekiq-1  | /gems/ruby/3.4.0/gems/sidekiq-7.3.1/lib/sidekiq/processor.rb:182:in 'block in Sidekiq::Processor#process'
+sidekiq-1  | /gems/ruby/3.4.0/gems/sidekiq-7.3.1/lib/sidekiq/processor.rb:181:in 'Thread.handle_interrupt'
+sidekiq-1  | /gems/ruby/3.4.0/gems/sidekiq-7.3.1/lib/sidekiq/processor.rb:181:in 'Sidekiq::Processor#process'
+sidekiq-1  | /gems/ruby/3.4.0/gems/sidekiq-7.3.1/lib/sidekiq/processor.rb:86:in 'Sidekiq::Processor#process_one'
+sidekiq-1  | /gems/ruby/3.4.0/gems/sidekiq-7.3.1/lib/sidekiq/processor.rb:76:in 'Sidekiq::Processor#run'
+sidekiq-1  | /gems/ruby/3.4.0/gems/sidekiq-7.3.1/lib/sidekiq/component.rb:10:in 'Sidekiq::Component#watchdog'
+sidekiq-1  | /gems/ruby/3.4.0/gems/sidekiq-7.3.1/lib/sidekiq/component.rb:19:in 'block in Sidekiq::Component#safe_thread'
+sidekiq-1  | 2026-01-24T10:43:18.583Z pid=1 tid=q8h class=ActionMailer::MailDeliveryJob jid=a9e61e30fb0b3ad9d8282bea elapsed=0.766 INFO: fail
+sidekiq-1  | 2026-01-24T10:43:18.583Z pid=1 tid=q8h WARN: {"context":"Job raised exception","job":{"retry":true,"queue":"default","wrapped":"ActionMailer::MailDeliveryJob","args":[{"job_class":"ActionMailer::MailDeliveryJob","job_id":"3e4b7990-4ffc-4905-a8ad-d62e06a29c2c","provider_job_id":null,"queue_name":"default","priority":null,"arguments":["AgentNotifications::ConversationNotificationsMailer","conversation_assignment","deliver_now",{"params":{"account":{"_aj_globalid":"gid://chatwoot/Account/1"},"_aj_symbol_keys":["account"]},"args":[{"_aj_globalid":"gid://chatwoot/Conversation/1"},{"_aj_globalid":"gid://chatwoot/SuperAdmin/1"},null],"_aj_ruby2_keywords":["params","args"]}],"executions":0,"exception_executions":{},"locale":"en","timezone":"UTC","enqueued_at":"2026-01-24T10:43:17.813826502Z","scheduled_at":null}],"class":"ActiveJob::QueueAdapters::SidekiqAdapter::JobWrapper","jid":"a9e61e30fb0b3ad9d8282bea","created_at":1769251397.81388,"enqueued_at":1769251397.8139336}}
+sidekiq-1  | 2026-01-24T10:43:18.583Z pid=1 tid=q8h WARN: Mail::Sendmail::DeliveryError: Delivery failed with exitstatus 1: ["/usr/sbin/sendmail", "-i", "-f", "accounts@chatwoot.com", "--", "john@acme.inc"]
+sidekiq-1  | 2026-01-24T10:43:18.584Z pid=1 tid=q8h WARN: 
+sidekiq-1  | 2026-01-24T10:43:23.133Z pid=1 tid=qfd class=Inboxes::FetchImapEmailInboxesJob jid=e755cce277deb8447dcb24c0 INFO: start
+sidekiq-1  | 2026-01-24T10:43:23.140Z pid=1 tid=qfd class=Inboxes::FetchImapEmailInboxesJob jid=e755cce277deb8447dcb24c0 INFO: Performing Inboxes::FetchImapEmailInboxesJob (Job ID: 150afe6b-0818-4e89-9982-3c4f6bd3a82e) from Sidekiq(scheduled_jobs) enqueued at 2026-01-24T10:42:21.996434875Z
+sidekiq-1  | 2026-01-24T10:43:23.149Z pid=1 tid=qfd class=Inboxes::FetchImapEmailInboxesJob jid=e755cce277deb8447dcb24c0 INFO: Performed Inboxes::FetchImapEmailInboxesJob (Job ID: 150afe6b-0818-4e89-9982-3c4f6bd3a82e) from Sidekiq(scheduled_jobs) in 9.47ms
+sidekiq-1  | 2026-01-24T10:43:23.150Z pid=1 tid=qfd class=Inboxes::FetchImapEmailInboxesJob jid=e755cce277deb8447dcb24c0 elapsed=0.017 INFO: done

@@ -1,0 +1,20 @@
+﻿rails-1  | The Gemfile's dependencies are satisfied
+rails-1  | + exec bundle exec rails s -p 3000 -b 0.0.0.0
+rails-1  | /gems/ruby/3.4.0/gems/reline-0.3.6/lib/reline/terminfo.rb:2: warning: /usr/local/lib/ruby/3.4.0/fiddle.rb was loaded from the standard library, but will no longer be part of the default gems starting from Ruby 3.5.0.
+rails-1  | You can add fiddle to your Gemfile or gemspec to silence this warning.
+rails-1  | Also please contact the author of reline-0.3.6 to request adding fiddle into its gemspec.
+rails-1  | => Booting Puma
+rails-1  | => Rails 7.1.5.2 application starting in development 
+rails-1  | => Run `bin/rails server --help` for more startup options
+rails-1  | fatal: detected dubious ownership in repository at '/app'
+rails-1  | To add an exception for this directory, call:
+rails-1  | 
+rails-1  | 	git config --global --add safe.directory /app
+rails-1  | Puma starting in single mode...
+rails-1  | * Puma version: 6.4.3 (ruby 3.4.4-p34) ("The Eagle of Durango")
+rails-1  | *  Min threads: 5
+rails-1  | *  Max threads: 5
+rails-1  | *  Environment: development
+rails-1  | *          PID: 1
+rails-1  | * Listening on http://0.0.0.0:3000
+rails-1  | Use Ctrl-C to stop

@@ -1,0 +1,40 @@
+﻿rails-1  | Database ready to accept connections.
+rails-1  | + bundle install
+rails-1  | [32mBundle complete! 145 Gemfile dependencies, 365 gems now installed.[0m
+rails-1  | [32mBundled gems are installed into `/gems`[0m
+rails-1  | 3 installed gems you directly depend on are looking for funding.
+rails-1  |   Run `bundle fund` for details
+rails-1  | + BUNDLE='bundle check'
+rails-1  | + bundle check
+rails-1  | The Gemfile's dependencies are satisfied
+rails-1  | + exec bundle exec rails s -p 3000 -b 0.0.0.0
+rails-1  | /gems/ruby/3.4.0/gems/reline-0.3.6/lib/reline/terminfo.rb:2: warning: /usr/local/lib/ruby/3.4.0/fiddle.rb was loaded from the standard library, but will no longer be part of the default gems starting from Ruby 3.5.0.
+rails-1  | You can add fiddle to your Gemfile or gemspec to silence this warning.
+rails-1  | Also please contact the author of reline-0.3.6 to request adding fiddle into its gemspec.
+rails-1  | => Booting Puma
+rails-1  | => Rails 7.1.5.2 application starting in development 
+rails-1  | => Run `bin/rails server --help` for more startup options
+rails-1  | fatal: detected dubious ownership in repository at '/app'
+rails-1  | To add an exception for this directory, call:
+rails-1  | 
+rails-1  | 	git config --global --add safe.directory /app
+sidekiq-1  | 2026-01-24T10:38:54.864Z pid=1 tid=2up INFO: Cron Jobs - added job with name: internal_check_new_versions_job
+sidekiq-1  | 2026-01-24T10:38:54.871Z pid=1 tid=2up INFO: Cron Jobs - added job with name: trigger_scheduled_items_job
+sidekiq-1  | 2026-01-24T10:38:54.878Z pid=1 tid=2up INFO: Cron Jobs - added job with name: trigger_imap_email_inboxes_job
+sidekiq-1  | 2026-01-24T10:38:54.883Z pid=1 tid=2up INFO: Cron Jobs - added job with name: remove_stale_contact_inboxes_job.rb
+sidekiq-1  | 2026-01-24T10:38:54.887Z pid=1 tid=2up INFO: Cron Jobs - added job with name: remove_stale_redis_keys_job.rb
+sidekiq-1  | 2026-01-24T10:38:54.890Z pid=1 tid=2up INFO: Cron Jobs - added job with name: process_stale_contacts_job
+sidekiq-1  | 2026-01-24T10:38:54.894Z pid=1 tid=2up INFO: Cron Jobs - added job with name: delete_accounts_job
+sidekiq-1  | 2026-01-24T10:38:54.897Z pid=1 tid=2up INFO: Cron Jobs - added job with name: bulk_auto_assignment_job
+sidekiq-1  | 2026-01-24T10:38:54.901Z pid=1 tid=2up INFO: Cron Jobs - added job with name: periodic_assignment_job
+sidekiq-1  | 2026-01-24T10:38:55.192Z pid=1 tid=2up ERROR: Failed to configure AI Agents SDK: We could not find your database: chatwoot_dev. Available database configurations can be found in config/database.yml.
+sidekiq-1  | 
+sidekiq-1  | To resolve this error:
+sidekiq-1  | 
+sidekiq-1  | - Did you not create the database, or did you delete it? To create the database, run:
+sidekiq-1  | 
+sidekiq-1  |     bin/rails db:create
+sidekiq-1  | 
+sidekiq-1  | - Has the database name changed? Verify that config/database.yml contains the correct database name.
+sidekiq-1  | 
+sidekiq-1  | 2026-01-24T10:38:55.215Z pid=1 tid=2up INFO: [rake ip_lookup:setup] IP_LOOKUP_API_KEY empty. Skipping geoip database setup

@@ -1,0 +1,20 @@
+﻿rails-1  | + rm -rf /app/tmp/pids/server.pid
+rails-1  | + rm -rf '/app/tmp/cache/*'
+rails-1  | + echo 'Waiting for postgres to become ready....'
+rails-1  | Waiting for postgres to become ready....
+rails-1  | + docker/entrypoints/helpers/pg_database_url.rb
+rails-1  | + export 'POSTGRES_PORT=5432'
+rails-1  | + PG_READY='pg_isready -h postgres -p 5432 -U postgres'
+rails-1  | + pg_isready -h postgres -p 5432 -U postgres
+rails-1  | postgres:5432 - accepting connections
+rails-1  | + echo 'Database ready to accept connections.'
+rails-1  | Database ready to accept connections.
+rails-1  | + bundle install
+rails-1  | [32mBundle complete! 145 Gemfile dependencies, 365 gems now installed.[0m
+rails-1  | [32mBundled gems are installed into `/gems`[0m
+rails-1  | 3 installed gems you directly depend on are looking for funding.
+rails-1  |   Run `bundle fund` for details
+rails-1  | + BUNDLE='bundle check'
+rails-1  | + bundle check
+rails-1  | The Gemfile's dependencies are satisfied
+rails-1  | + exec bundle exec rails s -p 3000 -b 0.0.0.0
