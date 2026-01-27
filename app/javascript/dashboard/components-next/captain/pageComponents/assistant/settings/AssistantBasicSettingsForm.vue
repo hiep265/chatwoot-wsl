@@ -50,6 +50,10 @@ const formErrors = computed(() => ({
   productName: getErrorMessage('productName'),
 }));
 
+const availableTools = computed(() =>
+  (props.assistant?.available_tools || []).filter(tool => tool.custom)
+);
+
 const updateStateFromAssistant = assistant => {
   const { config = {} } = assistant;
   state.name = assistant.name;
@@ -60,6 +64,8 @@ const updateStateFromAssistant = assistant => {
     memories: config.feature_memory || false,
     citations: config.feature_citation || false,
   };
+
+  state.toolIds = config.tool_ids || [];
 };
 
 const handleBasicInfoUpdate = async () => {
@@ -79,6 +85,7 @@ const handleBasicInfoUpdate = async () => {
       feature_faq: state.features.conversationFaqs,
       feature_memory: state.features.memories,
       feature_citation: state.features.citations,
+      tool_ids: state.toolIds,
     },
   };
 
@@ -137,6 +144,20 @@ watch(
         <label class="flex items-center gap-2">
           <input v-model="state.features.citations" type="checkbox" />
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS') }}
+        </label>
+      </div>
+    </div>
+
+    <div v-if="availableTools.length" class="flex flex-col gap-2">
+      <label class="text-sm font-medium text-n-slate-12">Tools</label>
+      <div class="flex flex-col gap-2">
+        <label
+          v-for="tool in availableTools"
+          :key="tool.id"
+          class="flex items-center gap-2"
+        >
+          <input v-model="state.toolIds" type="checkbox" :value="tool.id" />
+          <span class="text-sm text-n-slate-12">{{ tool.title }}</span>
         </label>
       </div>
     </div>

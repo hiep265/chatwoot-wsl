@@ -2,7 +2,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   before_action :current_account
   before_action -> { check_authorization(Captain::Assistant) }
 
-  before_action :set_assistant, only: [:show, :update, :destroy, :playground]
+  before_action :set_assistant, only: [:show, :update, :destroy, :playground, :system_prompt_template]
 
   def index
     @assistants = account_assistants.ordered
@@ -24,12 +24,22 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def playground
-    response = Captain::Llm::AssistantChatService.new(assistant: @assistant).generate_response(
+    response = Captain::Llm::AssistantChatService.new(assistant: @assistant).generate_playground_response(
       additional_message: params[:message_content],
       message_history: message_history
     )
 
     render json: response
+  end
+
+  def system_prompt_template
+    template = Captain::Llm::SystemPromptsService.assistant_response_generator(
+      @assistant.name,
+      @assistant.config['product_name'],
+      '{{TOOLS}}',
+      @assistant.config
+    )
+    render json: { template: template }
   end
 
   def tools
@@ -52,7 +62,8 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
                                                   config: [
                                                     :product_name, :feature_faq, :feature_memory, :feature_citation,
                                                     :welcome_message, :handoff_message, :resolution_message,
-                                                    :instructions, :temperature
+                                                    :instructions, :temperature, :system_prompt,
+                                                    { tool_ids: [] }
                                                   ])
 
     # Handle array parameters separately to allow partial updates

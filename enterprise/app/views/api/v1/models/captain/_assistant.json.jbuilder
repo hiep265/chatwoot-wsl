@@ -7,3 +7,6 @@ json.id resource.id
 json.name resource.name
 json.response_guidelines resource.response_guidelines
 json.updated_at resource.updated_at.to_i
+
+json.available_tools resource.available_agent_tools
+json.available_tool_ids resource.available_tool_ids

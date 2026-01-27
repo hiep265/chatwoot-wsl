@@ -3,6 +3,10 @@ class Captain::AssistantPolicy < ApplicationPolicy
     true
   end
 
+  def semantic_search?
+    true
+  end
+
   def show?
     true
   end

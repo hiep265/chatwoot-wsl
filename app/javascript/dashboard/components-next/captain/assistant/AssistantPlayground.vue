@@ -59,11 +59,13 @@ const sendMessage = async () => {
       messageHistory: formatMessagesForApi(),
     });
 
-    messages.value.push({
-      content: data.response,
-      sender: 'assistant',
-      timestamp: new Date().toISOString(),
-    });
+    if (data?.response) {
+      messages.value.push({
+        content: data.response,
+        sender: 'assistant',
+        timestamp: new Date().toISOString(),
+      });
+    }
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Error getting assistant response:', error);

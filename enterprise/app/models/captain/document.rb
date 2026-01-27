@@ -48,6 +48,7 @@ class Captain::Document < ApplicationRecord
   after_create_commit :enqueue_crawl_job
   after_create_commit :update_document_usage
   after_destroy :update_document_usage
+  after_destroy_commit :enqueue_light_rag_delete_job
   after_commit :enqueue_response_builder_job
   scope :ordered, -> { order(created_at: :desc) }
 
@@ -87,6 +88,13 @@ class Captain::Document < ApplicationRecord
   end
 
   private
+
+  def enqueue_light_rag_delete_job
+    doc_id = Captain::LightRagClient.doc_id_for_captain_document(id)
+    Captain::Documents::LightRagDeleteJob.perform_later(doc_id)
+  rescue StandardError => e
+    Rails.logger.error("[Captain][LightRAG] Failed to enqueue delete for document #{id}: #{e.message}")
+  end
 
   def enqueue_crawl_job
     return if status != 'in_progress'

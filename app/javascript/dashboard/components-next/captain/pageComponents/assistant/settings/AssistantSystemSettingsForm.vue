@@ -5,6 +5,7 @@ import { useVuelidate } from '@vuelidate/core';
 import { minLength } from '@vuelidate/validators';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useAccount } from 'dashboard/composables/useAccount';
+import CaptainAssistant from 'dashboard/api/captain/assistant';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
@@ -30,6 +31,8 @@ const initialState = {
   resolutionMessage: '',
   instructions: '',
   temperature: 1,
+  systemPrompt: '',
+  enableSystemPromptOverride: false,
 };
 
 const state = reactive({ ...initialState });
@@ -38,6 +41,7 @@ const validationRules = {
   handoffMessage: { minLength: minLength(1) },
   resolutionMessage: { minLength: minLength(1) },
   instructions: { minLength: minLength(1) },
+  systemPrompt: { minLength: minLength(1) },
 };
 
 const v$ = useVuelidate(validationRules, state);
@@ -50,6 +54,7 @@ const formErrors = computed(() => ({
   handoffMessage: getErrorMessage('handoffMessage'),
   resolutionMessage: getErrorMessage('resolutionMessage'),
   instructions: getErrorMessage('instructions'),
+  systemPrompt: getErrorMessage('systemPrompt'),
 }));
 
 const updateStateFromAssistant = assistant => {
@@ -58,17 +63,27 @@ const updateStateFromAssistant = assistant => {
   state.resolutionMessage = config.resolution_message;
   state.instructions = config.instructions;
   state.temperature = config.temperature || 1;
+  state.systemPrompt = config.system_prompt || '';
+  state.enableSystemPromptOverride = !!config.system_prompt;
+};
+
+const loadDefaultTemplate = async () => {
+  try {
+    const { data } = await CaptainAssistant.getSystemPromptTemplate(
+      props.assistant.id
+    );
+    state.systemPrompt = data.template;
+  } catch (error) {
+    // Ignore error
+  }
 };
 
 const handleSystemMessagesUpdate = async () => {
   const validations = [
     v$.value.handoffMessage.$validate(),
     v$.value.resolutionMessage.$validate(),
+    v$.value.instructions.$validate(),
   ];
-
-  if (!isCaptainV2Enabled.value) {
-    validations.push(v$.value.instructions.$validate());
-  }
 
   const result = await Promise.all(validations).then(results =>
     results.every(Boolean)
@@ -81,12 +96,10 @@ const handleSystemMessagesUpdate = async () => {
       handoff_message: state.handoffMessage,
       resolution_message: state.resolutionMessage,
       temperature: state.temperature || 1,
+      instructions: state.instructions,
+      system_prompt: state.enableSystemPromptOverride ? state.systemPrompt : '',
     },
   };
-
-  if (!isCaptainV2Enabled.value) {
-    payload.config.instructions = state.instructions;
-  }
 
   emit('submit', payload);
 };
@@ -121,7 +134,6 @@ watch(
     />
 
     <Editor
-      v-if="!isCaptainV2Enabled"
       v-model="state.instructions"
       :label="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTIONS.LABEL')"
       :placeholder="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTIONS.PLACEHOLDER')"
@@ -130,6 +142,38 @@ watch(
       :message-type="formErrors.instructions ? 'error' : 'info'"
       class="z-0"
     />
+
+    <div class="flex flex-col gap-2">
+      <label class="flex items-center gap-2">
+        <input v-model="state.enableSystemPromptOverride" type="checkbox" />
+        <span class="text-sm font-medium text-n-slate-12">
+          {{ t('CAPTAIN.ASSISTANTS.FORM.SYSTEM_PROMPT.ENABLE_OVERRIDE') }}
+        </span>
+      </label>
+      <p class="text-sm text-n-slate-11">
+        {{ t('CAPTAIN.ASSISTANTS.FORM.SYSTEM_PROMPT.OVERRIDE_DESCRIPTION') }}
+      </p>
+    </div>
+
+    <div v-if="state.enableSystemPromptOverride" class="flex flex-col gap-4">
+      <div class="flex justify-end">
+        <Button
+          :label="t('CAPTAIN.ASSISTANTS.FORM.SYSTEM_PROMPT.LOAD_DEFAULT')"
+          size="sm"
+          variant="outline"
+          @click="loadDefaultTemplate"
+        />
+      </div>
+      <Editor
+        v-model="state.systemPrompt"
+        :label="t('CAPTAIN.ASSISTANTS.FORM.SYSTEM_PROMPT.LABEL')"
+        :placeholder="t('CAPTAIN.ASSISTANTS.FORM.SYSTEM_PROMPT.PLACEHOLDER')"
+        :message="formErrors.systemPrompt"
+        :max-length="50000"
+        :message-type="formErrors.systemPrompt ? 'error' : 'info'"
+        class="z-0"
+      />
+    </div>
 
     <div class="flex flex-col gap-2">
       <label class="text-sm font-medium text-n-slate-12">

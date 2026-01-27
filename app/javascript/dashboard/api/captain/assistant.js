@@ -15,6 +15,10 @@ class CaptainAssistant extends ApiClient {
     });
   }
 
+  getSystemPromptTemplate(id) {
+    return axios.get(`${this.url}/${id}/system_prompt_template`);
+  }
+
   playground({ assistantId, messageContent, messageHistory }) {
     return axios.post(`${this.url}/${assistantId}/playground`, {
       message_content: messageContent,

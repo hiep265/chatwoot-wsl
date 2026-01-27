@@ -10,7 +10,10 @@ module Concerns::Toolable
     tool_class = Class.new(Captain::Tools::HttpTool) do
       description custom_tool_record.description
 
-      custom_tool_record.param_schema.each do |param_def|
+      custom_tool_record.param_schema.to_a.each do |param_def|
+        next if param_def.blank?
+        next if param_def['name'].blank?
+
         param param_def['name'].to_sym,
               type: param_def['type'],
               desc: param_def['description'],
@@ -29,6 +32,60 @@ module Concerns::Toolable
     Captain::Tools.const_set(class_name, tool_class)
 
     tool_class.new(assistant, self)
+  end
+
+  def llm_tool(assistant, user: nil, state: {})
+    custom_tool_record = self
+    class_name = "#{custom_tool_record.slug.underscore.camelize}LlmTool"
+
+    tool_class = Class.new(Captain::Tools::BaseTool) do
+      define_singleton_method(:name) { custom_tool_record.slug }
+
+      description(custom_tool_record.description.presence || custom_tool_record.title)
+
+      custom_tool_record.param_schema.to_a.each do |param_def|
+        next if param_def.blank?
+        next if param_def['name'].blank?
+
+        options = {
+          desc: param_def['description'],
+          required: param_def.fetch('required', true)
+        }
+
+        type = param_def['type']
+        if type.present?
+          mapped_type = case type.to_s
+                        when 'string' then :string
+                        when 'integer' then :integer
+                        when 'number' then :number
+                        when 'boolean' then :boolean
+                        else nil
+                        end
+          options[:type] = mapped_type if mapped_type
+        end
+        param param_def['name'].to_sym, **options
+      end
+
+      define_method(:initialize) do |assistant, user: nil, state: {}|
+        @custom_tool = custom_tool_record
+        @state = state
+        super(assistant, user: user)
+      end
+
+      define_method(:execute) do |**params|
+        tool_context = Struct.new(:state).new(@state)
+        Captain::Tools::HttpTool.new(@assistant, @custom_tool).perform(tool_context, **params)
+      end
+
+      define_method(:active?) do
+        @custom_tool.enabled?
+      end
+    end
+
+    Captain::Tools.send(:remove_const, class_name) if Captain::Tools.const_defined?(class_name, false)
+    Captain::Tools.const_set(class_name, tool_class)
+
+    tool_class.new(assistant, user: user, state: state)
   end
 
   def build_request_url(params)

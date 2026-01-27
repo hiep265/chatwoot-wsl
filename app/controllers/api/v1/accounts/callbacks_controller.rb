@@ -30,6 +30,8 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
   end
 
   def facebook_pages
+    return head :unprocessable_entity if fb_object.blank?
+
     pages = []
     fb_pages = fb_object.get_connections('me', 'accounts')
     pages.concat(fb_pages)
@@ -55,6 +57,8 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
   def reauthorize_page
     if @inbox&.facebook?
       fb_page_id = @inbox.channel.page_id
+      return head :unprocessable_entity if fb_object.blank?
+
       page_details = fb_object.get_connections('me', 'accounts')
 
       if (page_detail = (page_details || []).detect { |page| fb_page_id == page['id'] })
@@ -89,7 +93,9 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
   end
 
   def fb_object
-    @user_access_token = long_lived_token(params[:omniauth_token])
+    @user_access_token = long_lived_token(omniauth_token_param)
+    return if @user_access_token.blank?
+
     Koala::Facebook::API.new(@user_access_token)
   end
 
@@ -98,6 +104,11 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
     koala.exchange_access_token_info(omniauth_token)['access_token']
   rescue StandardError => e
     Rails.logger.error "Error in long_lived_token: #{e.message}"
+    nil
+  end
+
+  def omniauth_token_param
+    params[:omniauth_token].presence || params.dig(:callback, :omniauth_token)
   end
 
   def mark_already_existing_facebook_pages(data)

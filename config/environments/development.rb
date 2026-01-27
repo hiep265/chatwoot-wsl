@@ -62,6 +62,9 @@ Rails.application.configure do
 
   # Disable host check during development
   config.hosts = nil
+
+  # Allow web console access from any IP for Docker/WSL
+  config.web_console.allowed_ips = %w(0.0.0.0/0 ::/0)
   
   # GitHub Codespaces configuration
   if ENV['CODESPACES']

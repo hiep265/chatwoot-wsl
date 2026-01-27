@@ -92,10 +92,19 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def agent_tools
-    [
+    tools = [
       self.class.resolve_tool_class('faq_lookup').new(self),
       self.class.resolve_tool_class('handoff').new(self)
     ]
+
+    selected_tool_ids = Array(config['tool_ids']).map(&:to_s).reject(&:blank?)
+    custom_tools = account.captain_custom_tools.enabled
+    custom_tools = custom_tools.where(slug: selected_tool_ids) if selected_tool_ids.any?
+    custom_tools.each do |custom_tool|
+      tools << custom_tool.tool(self)
+    end
+
+    tools.select(&:active?)
   end
 
   def prompt_context

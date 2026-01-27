@@ -6,9 +6,49 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
 
     faqs = generate_faqs(document, options)
     create_responses_from_faqs(faqs, document)
+
+    upsert_document_in_light_rag(document, faqs)
   end
 
   private
+
+  def upsert_document_in_light_rag(document, faqs)
+    client = Captain::LightRagClient.new
+    unless client.enabled?
+      Rails.logger.info("[Captain][LightRAG] Skipping upsert for document #{document.id}: CAPTAIN_LIGHT_RAG_URL is blank")
+      return
+    end
+
+    content = build_light_rag_content(document, faqs)
+    if content.blank?
+      Rails.logger.info("[Captain][LightRAG] Skipping upsert for document #{document.id}: content is blank")
+      return
+    end
+
+    doc_id = Captain::LightRagClient.doc_id_for_captain_document(document.id)
+    Rails.logger.info("[Captain][LightRAG] Upserting document #{document.id} doc_id=#{doc_id} url=#{ENV.fetch('CAPTAIN_LIGHT_RAG_URL', '')}")
+
+    response = client.upsert_document(
+      doc_id: doc_id,
+      content: content,
+      file_path: document.display_url
+    )
+
+    Rails.logger.info("[Captain][LightRAG] Upsert done document #{document.id} status=#{response&.code}")
+  rescue StandardError => e
+    Rails.logger.error("[Captain][LightRAG] Failed to upsert document #{document.id}: #{e.message}")
+  end
+
+  def build_light_rag_content(document, faqs)
+    return document.content if document.content.present?
+    return '' if faqs.blank?
+
+    faqs.map do |faq|
+      question = faq['question']
+      answer = faq['answer']
+      "Question: #{question}\nAnswer: #{answer}"
+    end.join("\n\n")
+  end
 
   def generate_faqs(document, options)
     if should_use_pagination?(document)
