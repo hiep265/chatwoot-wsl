@@ -19,10 +19,31 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
   describe '#parameters' do
     it 'returns the correct parameters' do
       expect(tool.parameters).to have_key(:reason)
+      expect(tool.parameters).to have_key(:is_lead)
+      expect(tool.parameters).to have_key(:customer_request)
+      expect(tool.parameters).to have_key(:is_urgent)
+      expect(tool.parameters).to have_key(:is_upset)
+      expect(tool.parameters).to have_key(:pause_bot)
+
       expect(tool.parameters[:reason].name).to eq(:reason)
       expect(tool.parameters[:reason].type).to eq('string')
       expect(tool.parameters[:reason].description).to eq('The reason why handoff is needed (optional)')
       expect(tool.parameters[:reason].required).to be false
+
+      expect(tool.parameters[:is_lead].type).to eq('string')
+      expect(tool.parameters[:is_lead].required).to be false
+
+      expect(tool.parameters[:customer_request].type).to eq('string')
+      expect(tool.parameters[:customer_request].required).to be false
+
+      expect(tool.parameters[:is_urgent].type).to eq('string')
+      expect(tool.parameters[:is_urgent].required).to be false
+
+      expect(tool.parameters[:is_upset].type).to eq('string')
+      expect(tool.parameters[:is_upset].required).to be false
+
+      expect(tool.parameters[:pause_bot].type).to eq('string')
+      expect(tool.parameters[:pause_bot].required).to be false
     end
   end
 
@@ -75,14 +96,14 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
       end
 
       context 'without reason provided' do
-        it 'creates a private note with nil content and hands off conversation' do
+        it 'creates a private note with default content and hands off conversation' do
           expect do
             result = tool.perform(tool_context)
             expect(result).to eq('Conversation handed off to human support team')
           end.to change(Message, :count).by(1)
 
           created_message = Message.last
-          expect(created_message.content).to be_nil
+          expect(created_message.content).to eq('Agent requested handoff')
         end
 
         it 'logs tool usage with default reason' do
@@ -92,6 +113,38 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
           )
 
           tool.perform(tool_context)
+        end
+      end
+
+      context 'with handoff metadata provided' do
+        it 'persists metadata to custom_attributes, applies labels, and sets urgent priority' do
+          tool.perform(
+            tool_context,
+            reason: 'Need human support',
+            is_lead: 'true',
+            customer_request: 'Pricing and demo',
+            is_urgent: 'true',
+            is_upset: 'false',
+            pause_bot: 'true'
+          )
+
+          conversation.reload
+
+          handoff_attrs = conversation.custom_attributes.dig('captain', 'handoff')
+          expect(handoff_attrs).to be_a(Hash)
+          expect(handoff_attrs['reason']).to eq('Need human support')
+          expect(handoff_attrs['customer_request']).to eq('Pricing and demo')
+          expect(handoff_attrs['is_lead']).to eq(true)
+          expect(handoff_attrs['is_urgent']).to eq(true)
+          expect(handoff_attrs['is_upset']).to eq(false)
+          expect(handoff_attrs['pause_bot']).to eq(true)
+
+          expect(conversation.label_list).to include('ai_handoff')
+          expect(conversation.label_list).to include('ai_lead')
+          expect(conversation.label_list).to include('ai_urgent')
+          expect(conversation.label_list).to include('ai_paused')
+
+          expect(conversation.priority).to eq('urgent')
         end
       end
 
