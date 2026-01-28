@@ -62,6 +62,6 @@ class Captain::AssistantResponse < ApplicationRecord
   def update_response_embedding
     return unless saved_change_to_question? || saved_change_to_answer? || embedding.nil?
 
-    Captain::Llm::UpdateEmbeddingJob.perform_later(self, "#{question}: #{answer}")
+    Captain::Llm::UpdateEmbeddingJob.perform_later(self, question)
   end
 end

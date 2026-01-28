@@ -17,6 +17,18 @@ class CaptainResponses extends ApiClient {
       },
     });
   }
+
+  // Scan answer cho một FAQ từ conversation gốc
+  scanAnswer(id) {
+    return axios.post(`${this.url}/${id}/scan_answer`);
+  }
+
+  // Scan all pending FAQs
+  scanAllPending({ assistantId } = {}) {
+    return axios.post(`${this.url}/scan_all_pending`, {
+      assistant_id: assistantId,
+    });
+  }
 }
 
 export default new CaptainResponses();

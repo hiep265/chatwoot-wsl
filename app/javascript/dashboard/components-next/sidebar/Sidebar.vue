@@ -382,6 +382,11 @@ const menuItems = computed(() => {
           to: accountScopedRoute('account_overview_reports'),
         },
         {
+          name: 'AI Control Panel',
+          label: t('SIDEBAR.AI_CONTROL_PANEL'),
+          to: accountScopedRoute('ai_control_panel'),
+        },
+        {
           name: 'Report Conversation',
           label: t('SIDEBAR.REPORTS_CONVERSATION'),
           to: accountScopedRoute('conversation_reports'),

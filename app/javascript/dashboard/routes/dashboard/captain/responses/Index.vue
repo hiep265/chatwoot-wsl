@@ -6,9 +6,11 @@ import { useRouter, useRoute } from 'vue-router';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { debounce } from '@chatwoot/utils';
 import { useAccount } from 'dashboard/composables/useAccount';
+import CaptainResponsesAPI from 'dashboard/api/captain/response';
 
 import Banner from 'dashboard/components-next/banner/Banner.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
 import BulkSelectBar from 'dashboard/components-next/captain/assistant/BulkSelectBar.vue';
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 import BulkDeleteDialog from 'dashboard/components-next/captain/pageComponents/BulkDeleteDialog.vue';
@@ -59,6 +61,11 @@ const handleEdit = () => {
 
 const handleAction = ({ action, id }) => {
   selectedResponse.value = responses.value.find(response => id === response.id);
+  if (action === 'scan_answer') {
+    console.log('[Captain Index] scan answer', id);
+    CaptainResponsesAPI.scanAnswer(id);
+    return;
+  }
   nextTick(() => {
     if (action === 'delete') {
       handleDelete();
@@ -96,7 +103,7 @@ const updateURLWithFilters = (page, search) => {
 };
 
 const fetchResponses = (page = 1) => {
-  const filterParams = { page, status: 'approved' };
+  const filterParams = { page };
 
   if (selectedAssistantId.value) {
     filterParams.assistantId = selectedAssistantId.value;
@@ -242,6 +249,13 @@ onMounted(() => {
           autofocus
           @input="debouncedSearch"
         />
+        <Button
+          label="Pending FAQs"
+          sm
+          outline
+          icon="i-lucide-list" 
+          @click="navigateToPendingFAQs"
+        />
       </div>
     </template>
 
@@ -309,6 +323,7 @@ onMounted(() => {
       ref="deleteDialog"
       :entity="selectedResponse"
       type="Responses"
+      translation-key="RESPONSES"
       @delete-success="onDeleteSuccess"
     />
 

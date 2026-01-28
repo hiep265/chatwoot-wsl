@@ -363,6 +363,7 @@
     "CUSTOM_ROLES": "Custom Roles",
     "BETA": "Beta",
     "REPORTS_OVERVIEW": "Overview",
+    "AI_CONTROL_PANEL": "AI Control Panel",
     "REAUTHORIZE": "Your inbox connection has expired, please reconnect\n to continue receiving and sending messages",
     "HELP_CENTER": {
       "TITLE": "Help Center",
@@ -380,6 +381,54 @@
     "DOCS": "Read docs",
     "SECURITY": "Security",
     "CAPTAIN_AI": "Captain"
+  },
+
+  "AI_CONTROL_PANEL": {
+    "HEADER": "AI Control Panel",
+    "DESCRIPTION": "Monitor AI traffic and control AI takeover (pause/resume) for specific conversations.",
+    "METRICS": {
+      "TRAFFIC": "Traffic",
+      "TRAFFIC_HELP": "Total new conversations created in the selected date range.",
+      "AI_AUTOMATION": "AI automation",
+      "AI_AUTOMATION_HELP": "Conversations resolved by AI in the selected date range.",
+      "AI_HANDOFF": "AI handoff",
+      "AI_HANDOFF_HELP": "Conversations handed off from AI to human agents in the selected date range.",
+      "TOTAL_CONVERSATIONS": "Total conversations",
+      "TOTAL_CONVERSATIONS_HELP": "Total conversations handled by the bot in the selected date range.",
+      "TOTAL_MESSAGES": "Total bot messages",
+      "TOTAL_MESSAGES_HELP": "Total outgoing bot messages sent in the selected date range.",
+      "RESOLUTION_RATE": "Resolution rate",
+      "RESOLUTION_RATE_HELP": "Percentage of conversations resolved by the bot.",
+      "HANDOFF_RATE": "Handoff rate",
+      "HANDOFF_RATE_HELP": "Percentage of conversations handed off to human agents."
+    },
+    "CONVERSATIONS": {
+      "HEADER": "Live conversations",
+      "DESCRIPTION": "Recent conversations with AI-related labels.",
+      "REFRESH": "Refresh",
+      "LOADING": "Loading conversations...",
+      "EMPTY": "No conversations found.",
+      "MODE_AI": "AI",
+      "MODE_HUMAN": "Human"
+    },
+    "LABELS": {
+      "HEADER": "AI labels overview",
+      "DESCRIPTION": "Conversation counts for tracked AI labels in the selected date range."
+    },
+    "TAKEOVER": {
+      "HEADER": "Instant takeover",
+      "DESCRIPTION": "Pause AI replies for a conversation by adding the ai_paused label. Resume by removing it.",
+      "CONVERSATION_ID_LABEL": "Conversation ID (display_id)",
+      "CONVERSATION_ID_PLACEHOLDER": "e.g. 123",
+      "MISSING_CONVERSATION_ID": "Please enter a conversation ID",
+      "CHECK_STATUS": "Check status",
+      "PAUSE": "Pause AI",
+      "RESUME": "Resume AI",
+      "CURRENT_STATE": "Current state",
+      "STATE_PAUSED": "Paused",
+      "STATE_ACTIVE": "Active",
+      "OPEN_CONVERSATION": "Open conversation"
+    }
   },
   "CAPTAIN_SETTINGS": {
     "TITLE": "Captain Settings",

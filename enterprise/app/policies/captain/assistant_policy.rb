@@ -12,22 +12,30 @@ class Captain::AssistantPolicy < ApplicationPolicy
   end
 
   def tools?
-    @account_user.administrator?
+    true
   end
 
   def create?
-    @account_user.administrator?
+    true
   end
 
   def update?
-    @account_user.administrator?
+    true
   end
 
   def destroy?
-    @account_user.administrator?
+    true
   end
 
   def playground?
+    true
+  end
+
+  def scan_answer?
+    true
+  end
+
+  def scan_all_pending?
     true
   end
 end

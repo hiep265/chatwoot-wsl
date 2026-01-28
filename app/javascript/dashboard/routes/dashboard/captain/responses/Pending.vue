@@ -7,6 +7,7 @@ import { useRouter, useRoute } from 'vue-router';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { debounce } from '@chatwoot/utils';
 import { useAccount } from 'dashboard/composables/useAccount';
+import CaptainResponsesAPI from 'dashboard/api/captain/response';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -79,10 +80,68 @@ const handleEdit = () => {
   nextTick(() => createDialog.value.dialogRef.open());
 };
 
+// Scan answer cho một FAQ từ conversation gốc
+const isScanningOne = ref(null); // Changed to store ID or null
+const handleScanAnswer = async responseId => {
+  const currentId = Number(responseId || selectedResponse.value?.id);
+  if (!currentId) return;
+  console.log('[Captain Pending] scanAnswer start', currentId);
+
+  isScanningOne.value = currentId;
+  try {
+    const response = await CaptainResponsesAPI.scanAnswer(currentId);
+    const { suggested_answer } = response.data;
+    
+    if (suggested_answer && !suggested_answer.includes('[Không tìm thấy')) {
+      // Cập nhật answer và approve luôn
+      await store.dispatch('captainResponses/update', {
+        id: currentId,
+        answer: suggested_answer,
+        status: 'approved',
+      });
+      useAlert('Đã tìm và cập nhật câu trả lời thành công!');
+      fetchResponses(responseMeta.value?.page);
+    } else {
+      useAlert('Không tìm thấy câu trả lời phù hợp từ conversation');
+    }
+  } catch (error) {
+    useAlert(error?.response?.data?.error || 'Lỗi khi scan answer');
+  } finally {
+    isScanningOne.value = null;
+    selectedResponse.value = null;
+  }
+};
+
+// Scan tất cả pending FAQs
+const isScanningAll = ref(false);
+const handleScanAllPending = async () => {
+  isScanningAll.value = true;
+  try {
+    const response = await CaptainResponsesAPI.scanAllPending({
+      assistantId: selectedAssistantId.value,
+    });
+    const { processed, success, failed } = response.data;
+    useAlert(`Đã scan ${processed} FAQ: ${success} thành công, ${failed} thất bại`);
+    fetchResponses(1);
+  } catch (error) {
+    useAlert(error?.response?.data?.error || 'Lỗi khi scan all');
+  } finally {
+    isScanningAll.value = false;
+  }
+};
+
 const handleAction = ({ action, id }) => {
+  console.warn('[Captain Pending] handleAction', { action, id });
+  const responseId = Number(id);
   selectedResponse.value = filteredResponses.value.find(
-    response => id === response.id
+    response => Number(response.id) === responseId
   );
+
+  if (action === 'scan_answer') {
+    handleScanAnswer(responseId);
+    return;
+  }
+
   nextTick(() => {
     if (action === 'delete') {
       handleDelete();
@@ -141,6 +200,8 @@ const fetchResponses = (page = 1) => {
 // Bulk action
 const bulkSelectedIds = ref(new Set());
 const hoveredCard = ref(null);
+
+const hasBulkSelection = computed(() => bulkSelectedIds.value.size > 0);
 
 const buildSelectedCountLabel = computed(() => {
   const count = filteredResponses.value?.length || 0;
@@ -269,7 +330,7 @@ onMounted(() => {
 
     <template #search>
       <div
-        v-if="bulkSelectedIds.size === 0"
+        v-if="!hasBulkSelection"
         class="flex gap-3 justify-between w-full items-center"
       >
         <Input
@@ -280,6 +341,14 @@ onMounted(() => {
           type="search"
           autofocus
           @input="debouncedSearch"
+        />
+        <Button
+          label="Scan All Pending"
+          sm
+          outline
+          icon="i-lucide-search"
+          :is-loading="isScanningAll"
+          @click="handleScanAllPending"
         />
       </div>
     </template>
@@ -341,6 +410,7 @@ onMounted(() => {
           :selectable="hoveredCard === response.id || bulkSelectedIds.size > 0"
           :show-menu="false"
           :show-actions="!bulkSelectedIds.has(response.id)"
+          :is-scanning="isScanningOne === response.id"
           @action="handleAction"
           @navigate="handleNavigationAction"
           @select="handleCardSelect"
@@ -354,6 +424,7 @@ onMounted(() => {
       ref="deleteDialog"
       :entity="selectedResponse"
       type="Responses"
+      translation-key="RESPONSES"
       @delete-success="onDeleteSuccess"
     />
 

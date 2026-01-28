@@ -27,7 +27,9 @@ class V2::Reports::BotMetricsBuilder
   end
 
   def bot_messages
-    @bot_messages ||= account.messages.outgoing.where(conversation_id: bot_conversations.ids).where(created_at: range)
+    @bot_messages ||= account.messages.outgoing
+                             .where(created_at: range)
+                             .where("content_attributes ->> 'is_bot_generated' = 'true'")
   end
 
   def bot_resolutions_count

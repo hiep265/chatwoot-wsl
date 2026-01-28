@@ -12,7 +12,7 @@ const props = defineProps({
   },
   translationKey: {
     type: String,
-    required: true,
+    default: '',
   },
   entity: {
     type: Object,

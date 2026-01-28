@@ -363,6 +363,7 @@
     "CUSTOM_ROLES": "Custom Roles",
     "BETA": "Beta",
     "REPORTS_OVERVIEW": "Tổng quan",
+    "AI_CONTROL_PANEL": "Bảng điều khiển AI",
     "REAUTHORIZE": "Your inbox connection has expired, please reconnect\n to continue receiving and sending messages",
     "HELP_CENTER": {
       "TITLE": "Help Center",
@@ -379,6 +380,54 @@
     },
     "DOCS": "Đọc tài liệu",
     "SECURITY": "Security"
+  },
+
+  "AI_CONTROL_PANEL": {
+    "HEADER": "Bảng điều khiển AI",
+    "DESCRIPTION": "Theo dõi traffic AI và điều khiển takeover (tạm dừng/tiếp tục) cho từng cuộc hội thoại.",
+    "METRICS": {
+      "TRAFFIC": "Traffic",
+      "TRAFFIC_HELP": "Tổng số hội thoại mới tạo trong khoảng thời gian đã chọn.",
+      "AI_AUTOMATION": "AI tự xử lý",
+      "AI_AUTOMATION_HELP": "Số hội thoại được AI tự xử lý trong khoảng thời gian đã chọn.",
+      "AI_HANDOFF": "AI handoff",
+      "AI_HANDOFF_HELP": "Số hội thoại được chuyển từ AI sang người trong khoảng thời gian đã chọn.",
+      "TOTAL_CONVERSATIONS": "Tổng hội thoại",
+      "TOTAL_CONVERSATIONS_HELP": "Tổng số hội thoại bot đã xử lý trong khoảng thời gian đã chọn.",
+      "TOTAL_MESSAGES": "Tổng tin nhắn bot",
+      "TOTAL_MESSAGES_HELP": "Tổng số tin nhắn outgoing do bot gửi trong khoảng thời gian đã chọn.",
+      "RESOLUTION_RATE": "Tỉ lệ tự xử lý",
+      "RESOLUTION_RATE_HELP": "Tỉ lệ hội thoại được bot tự xử lý xong.",
+      "HANDOFF_RATE": "Tỉ lệ handoff",
+      "HANDOFF_RATE_HELP": "Tỉ lệ hội thoại được chuyển sang người."
+    },
+    "CONVERSATIONS": {
+      "HEADER": "Hội thoại đang hoạt động",
+      "DESCRIPTION": "Các hội thoại gần đây có nhãn liên quan đến AI.",
+      "REFRESH": "Làm mới",
+      "LOADING": "Đang tải hội thoại...",
+      "EMPTY": "Không có hội thoại.",
+      "MODE_AI": "AI",
+      "MODE_HUMAN": "Người"
+    },
+    "LABELS": {
+      "HEADER": "Tổng quan nhãn AI",
+      "DESCRIPTION": "Số hội thoại theo các nhãn AI được theo dõi trong khoảng thời gian đã chọn."
+    },
+    "TAKEOVER": {
+      "HEADER": "Takeover nhanh",
+      "DESCRIPTION": "Tạm dừng AI bằng cách thêm label ai_paused cho hội thoại. Bật lại bằng cách gỡ label.",
+      "CONVERSATION_ID_LABEL": "Conversation ID (display_id)",
+      "CONVERSATION_ID_PLACEHOLDER": "Ví dụ: 123",
+      "MISSING_CONVERSATION_ID": "Vui lòng nhập conversation ID",
+      "CHECK_STATUS": "Kiểm tra trạng thái",
+      "PAUSE": "Dừng AI",
+      "RESUME": "Bật AI",
+      "CURRENT_STATE": "Trạng thái",
+      "STATE_PAUSED": "Đang dừng",
+      "STATE_ACTIVE": "Đang chạy",
+      "OPEN_CONVERSATION": "Mở hội thoại"
+    }
   },
   "BILLING_SETTINGS": {
     "TITLE": "Phí",

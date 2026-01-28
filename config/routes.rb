@@ -69,6 +69,10 @@ Rails.application.routes.draw do
             resources :assistant_responses do
               collection do
                 get :semantic_search
+                post :scan_all_pending
+              end
+              member do
+                post :scan_answer
               end
             end
             resources :bulk_actions, only: [:create]

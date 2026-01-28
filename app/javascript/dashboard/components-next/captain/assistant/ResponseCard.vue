@@ -64,6 +64,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  isScanning: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['action', 'navigate', 'select', 'hover']);
@@ -85,6 +89,14 @@ const statusAction = computed(() => {
         value: 'approve',
         action: 'approve',
         icon: 'i-lucide-circle-check-big',
+        id: props.id,
+      },
+      {
+        label: 'Scan Answer',
+        value: 'scan_answer',
+        action: 'scan_answer',
+        icon: 'i-lucide-search',
+        id: props.id,
       },
     ];
   }
@@ -98,12 +110,14 @@ const menuItems = computed(() => [
     value: 'edit',
     action: 'edit',
     icon: 'i-lucide-pencil-line',
+    id: props.id,
   },
   {
     label: t('CAPTAIN.RESPONSES.OPTIONS.DELETE_RESPONSE'),
     value: 'delete',
     action: 'delete',
     icon: 'i-lucide-trash',
+    id: props.id,
   },
 ]);
 
@@ -111,9 +125,12 @@ const timestamp = computed(() =>
   dynamicTime(props.updatedAt || props.createdAt)
 );
 
-const handleAssistantAction = ({ action, value }) => {
+const handleAssistantAction = ({ action, value, id }) => {
+  if (action === 'scan_answer') {
+    console.log('[Captain] scan answer');
+  }
   toggleDropdown(false);
-  emit('action', { action, value, id: props.id });
+  emit('action', { action, value, id: id || props.id });
 };
 
 const handleDocumentableClick = () => {
@@ -146,6 +163,7 @@ const handleDocumentableClick = () => {
           class="relative flex items-center group"
         >
           <Button
+            type="button"
             icon="i-lucide-ellipsis-vertical"
             color="slate"
             size="xs"
@@ -172,6 +190,7 @@ const handleDocumentableClick = () => {
         <div class="flex items-center gap-2 sm:gap-5 w-full">
           <Button
             v-if="status === 'pending'"
+            type="button"
             :label="$t('CAPTAIN.RESPONSES.OPTIONS.APPROVE')"
             icon="i-lucide-circle-check-big"
             sm
@@ -182,6 +201,21 @@ const handleDocumentableClick = () => {
             "
           />
           <Button
+            v-if="status === 'pending'"
+            type="button"
+            label="Scan Answer"
+            icon="i-lucide-search"
+            sm
+            slate
+            link
+            class="hover:!no-underline"
+            :is-loading="isScanning"
+            @click="
+              handleAssistantAction({ action: 'scan_answer', value: 'scan_answer' })
+            "
+          />
+          <Button
+            type="button"
             :label="$t('CAPTAIN.RESPONSES.OPTIONS.EDIT_RESPONSE')"
             icon="i-lucide-pencil-line"
             sm
@@ -196,6 +230,7 @@ const handleDocumentableClick = () => {
             "
           />
           <Button
+            type="button"
             :label="$t('CAPTAIN.RESPONSES.OPTIONS.DELETE_RESPONSE')"
             icon="i-lucide-trash"
             sm

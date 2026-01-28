@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useStore } from 'vuex';
 import { useElementSize } from '@vueuse/core';
@@ -12,6 +12,8 @@ import wootConstants from 'dashboard/constants/globals';
 import { conversationListPageURL } from 'dashboard/helper/URLHelper';
 import { snoozedReopenTime } from 'dashboard/helper/snoozeHelpers';
 import { useInbox } from 'dashboard/composables/useInbox';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
+import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
 
 const props = defineProps({
@@ -90,6 +92,66 @@ const hasMultipleInboxes = computed(
 );
 
 const hasSlaPolicyId = computed(() => props.chat?.sla_policy_id);
+
+const PAUSE_LABEL = 'ai_paused';
+
+const conversationLabels = computed(() =>
+  store.getters['conversationLabels/getConversationLabels'](currentChat.value?.id)
+);
+
+const conversationLabelsUIFlags = computed(() =>
+  store.getters['conversationLabels/getUIFlags']
+);
+
+const isTakeoverEnabled = computed(() => {
+  const labels = Array.isArray(conversationLabels.value)
+    ? conversationLabels.value
+    : [];
+  return labels.includes(PAUSE_LABEL);
+});
+
+const isTakeoverToggleOn = ref(false);
+
+watch(
+  () => currentChat.value?.id,
+  id => {
+    if (id) store.dispatch('conversationLabels/get', id);
+  },
+  { immediate: true }
+);
+
+watch(
+  isTakeoverEnabled,
+  enabled => {
+    isTakeoverToggleOn.value = enabled;
+  },
+  { immediate: true }
+);
+
+const updateInstantTakeover = async () => {
+  const conversationId = currentChat.value?.id;
+  if (!conversationId) return;
+
+  const currentLabels = Array.isArray(conversationLabels.value)
+    ? conversationLabels.value
+    : [];
+  const next = new Set(currentLabels);
+  if (isTakeoverToggleOn.value) {
+    next.add(PAUSE_LABEL);
+  } else {
+    next.delete(PAUSE_LABEL);
+  }
+
+  await store.dispatch('conversationLabels/update', {
+    conversationId,
+    labels: Array.from(next),
+  });
+
+  if (conversationLabelsUIFlags.value?.isError) {
+    isTakeoverToggleOn.value = isTakeoverEnabled.value;
+    useAlert(t('CONVERSATION.CHANGE_STATUS_FAILED'));
+  }
+};
 </script>
 
 <template>
@@ -151,6 +213,17 @@ const hasSlaPolicyId = computed(() => props.chat?.sla_policy_id);
         :parent-width="width"
         class="hidden md:flex"
       />
+      <div
+        class="flex items-center gap-2 px-2 py-1 rounded-md outline outline-1 outline-n-weak bg-n-solid-1"
+        :class="{
+          'opacity-60 pointer-events-none': conversationLabelsUIFlags.isUpdating,
+        }"
+      >
+        <span class="text-xs text-n-slate-11">
+          {{ t('CONVERSATION.HEADER.INSTANT_TAKEOVER') }}
+        </span>
+        <Switch v-model="isTakeoverToggleOn" @change="updateInstantTakeover" />
+      </div>
       <MoreActions :conversation-id="currentChat.id" />
     </div>
   </div>

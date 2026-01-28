@@ -84,6 +84,7 @@ class ActionCableConnector extends BaseActionCableConnector {
   onConversationCreated = data => {
     this.app.$store.dispatch('addConversation', data);
     this.fetchConversationStats();
+    emitter.emit('ai_control_panel:refresh_live_conversations');
   };
 
   onConversationRead = data => {
@@ -104,6 +105,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       lastActivityAt,
       conversationId,
     });
+    emitter.emit('ai_control_panel:refresh_live_conversations');
   };
 
   // eslint-disable-next-line class-methods-use-this
@@ -112,11 +114,13 @@ class ActionCableConnector extends BaseActionCableConnector {
   onStatusChange = data => {
     this.app.$store.dispatch('updateConversation', data);
     this.fetchConversationStats();
+    emitter.emit('ai_control_panel:refresh_live_conversations');
   };
 
   onConversationUpdated = data => {
     this.app.$store.dispatch('updateConversation', data);
     this.fetchConversationStats();
+    emitter.emit('ai_control_panel:refresh_live_conversations');
   };
 
   onTypingOn = ({ conversation, user }) => {
