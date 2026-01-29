@@ -437,137 +437,258 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="px-6">
-    <ReportHeader
-      :header-title="t('AI_CONTROL_PANEL.HEADER')"
-      :header-description="t('AI_CONTROL_PANEL.DESCRIPTION')"
-    />
-
-    <div class="flex flex-col gap-4 pb-6">
-      <div
-        v-if="isRiskBannerVisible"
-        class="rounded-xl outline outline-1 px-4 py-3"
-        :class="
-          isRiskBannerBlinking
-            ? 'bg-n-ruby-3 text-n-ruby-12 outline-n-ruby-4 animate-pulse'
-            : 'bg-n-ruby-3 text-n-ruby-12 outline-n-ruby-4'
-        "
-      >
-        <div class="text-sm font-medium">
-          {{ riskBannerText }}
-        </div>
-      </div>
-
-      <ReportFilterSelector
-        :show-agents-filter="false"
-        :show-group-by-filter="false"
-        :show-business-hours-switch="false"
-        @filterChange="onFilterChange"
-        @filter-change="onFilterChange"
+  <div class="overflow-auto bg-n-background w-full px-6">
+    <div class="max-w-[80rem] mx-auto pb-12">
+      <ReportHeader
+        :header-title="t('AI_CONTROL_PANEL.HEADER')"
+        :header-description="t('AI_CONTROL_PANEL.DESCRIPTION')"
       />
 
-      <div
-        class="flex flex-wrap mx-0 shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 px-6 py-5"
-      >
-        <ReportMetricCard
-          :label="t('AI_CONTROL_PANEL.METRICS.TRAFFIC')"
-          :info-text="t('AI_CONTROL_PANEL.METRICS.TRAFFIC_HELP')"
-          :value="trafficConversationCountText"
-          class="flex-1"
-        />
-        <ReportMetricCard
-          :label="t('AI_CONTROL_PANEL.METRICS.AI_AUTOMATION')"
-          :info-text="t('AI_CONTROL_PANEL.METRICS.AI_AUTOMATION_HELP')"
-          :value="aiAutomationText"
-          class="flex-1"
-        />
-        <ReportMetricCard
-          :label="t('AI_CONTROL_PANEL.METRICS.AI_HANDOFF')"
-          :info-text="t('AI_CONTROL_PANEL.METRICS.AI_HANDOFF_HELP')"
-          :value="aiHandoffText"
-          class="flex-1"
-        />
-        <ReportMetricCard
-          :label="t('AI_CONTROL_PANEL.METRICS.TOTAL_MESSAGES')"
-          :info-text="t('AI_CONTROL_PANEL.METRICS.TOTAL_MESSAGES_HELP')"
-          :value="botMessageCount"
-          class="flex-1"
-        />
-      </div>
-
-      <div
-        class="shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 px-6 py-5"
-      >
-        <div class="flex items-center justify-between gap-3">
-          <div class="flex flex-col gap-1">
-            <div class="text-base font-medium text-n-slate-12">
-              {{ t('AI_CONTROL_PANEL.CONVERSATIONS.HEADER') }}
+      <div class="flex flex-col gap-4 pb-6">
+        <div
+          v-if="isRiskBannerVisible"
+          class="sticky top-0 z-10 rounded-xl outline outline-1 px-4 py-3"
+          :class="
+            isRiskBannerBlinking
+              ? 'bg-n-ruby-3 text-n-ruby-12 outline-n-ruby-4 animate-pulse'
+              : 'bg-n-ruby-3 text-n-ruby-12 outline-n-ruby-4'
+          "
+        >
+          <div class="flex items-center justify-between gap-3">
+            <div class="text-sm font-medium">
+              {{ riskBannerText }}
             </div>
-            <div class="text-sm text-n-slate-11">
-              {{ t('AI_CONTROL_PANEL.CONVERSATIONS.DESCRIPTION') }}
+            <Button
+              color="slate"
+              size="sm"
+              class="h-9"
+              :is-loading="isLiveConversationsLoading"
+              :label="t('AI_CONTROL_PANEL.CONVERSATIONS.REFRESH')"
+              @click="fetchLiveConversations"
+            />
+          </div>
+        </div>
+
+        <ReportFilterSelector
+          :show-agents-filter="false"
+          :show-group-by-filter="false"
+          :show-business-hours-switch="false"
+          @filterChange="onFilterChange"
+          @filter-change="onFilterChange"
+        />
+
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div class="rounded-xl outline outline-1 outline-n-blue-4 bg-n-blue-3 px-5 py-4">
+            <div class="text-xs font-medium text-n-blue-12">
+              {{ t('AI_CONTROL_PANEL.METRICS.TRAFFIC') }}
+            </div>
+            <div class="mt-1 text-3xl font-semibold text-n-blue-12">
+              {{ trafficConversationCountText }}
+            </div>
+            <div class="mt-1 text-xs text-n-blue-11">
+              {{ t('AI_CONTROL_PANEL.METRICS.TRAFFIC_HELP') }}
             </div>
           </div>
 
-          <Button
-            color="slate"
-            size="sm"
-            class="h-10"
-            :is-loading="isLiveConversationsLoading"
-            :label="t('AI_CONTROL_PANEL.CONVERSATIONS.REFRESH')"
-            @click="fetchLiveConversations"
-          />
+          <div class="rounded-xl outline outline-1 outline-n-teal-4 bg-n-teal-3 px-5 py-4">
+            <div class="text-xs font-medium text-n-teal-12">
+              {{ t('AI_CONTROL_PANEL.METRICS.AI_AUTOMATION') }}
+            </div>
+            <div class="mt-1 text-3xl font-semibold text-n-teal-12">
+              {{ aiAutomationText }}
+            </div>
+            <div class="mt-1 text-xs text-n-teal-11">
+              {{ t('AI_CONTROL_PANEL.METRICS.AI_AUTOMATION_HELP') }}
+            </div>
+          </div>
+
+          <div class="rounded-xl outline outline-1 outline-n-ruby-4 bg-n-ruby-3 px-5 py-4">
+            <div class="text-xs font-medium text-n-ruby-12">
+              {{ t('AI_CONTROL_PANEL.METRICS.AI_HANDOFF') }}
+            </div>
+            <div class="mt-1 text-3xl font-semibold text-n-ruby-12">
+              {{ aiHandoffText }}
+            </div>
+            <div class="mt-1 text-xs text-n-ruby-11">
+              {{ t('AI_CONTROL_PANEL.METRICS.AI_HANDOFF_HELP') }}
+            </div>
+          </div>
+
+          <div class="rounded-xl outline outline-1 outline-n-container bg-n-solid-2 px-5 py-4">
+            <div class="text-xs font-medium text-n-slate-12">
+              {{ t('AI_CONTROL_PANEL.METRICS.TOTAL_MESSAGES') }}
+            </div>
+            <div class="mt-1 text-3xl font-semibold text-n-slate-12">
+              {{ botMessageCount }}
+            </div>
+            <div class="mt-1 text-xs text-n-slate-11">
+              {{ t('AI_CONTROL_PANEL.METRICS.TOTAL_MESSAGES_HELP') }}
+            </div>
+          </div>
         </div>
 
-        <div
-          v-if="isLiveConversationsLoading && !liveConversations.length"
-          class="mt-4 text-sm text-n-slate-11"
-        >
-          {{ t('AI_CONTROL_PANEL.CONVERSATIONS.LOADING') }}
-        </div>
-
-        <div
-          v-else-if="!liveConversations.length"
-          class="mt-4 text-sm text-n-slate-11"
-        >
-          {{ t('AI_CONTROL_PANEL.CONVERSATIONS.EMPTY') }}
-        </div>
-
-        <div v-else class="mt-4 divide-y divide-n-weak">
-          <div
-            v-for="conversation in liveConversations"
-            :key="conversation.id"
-            class="flex items-start justify-between gap-4 py-3"
-          >
-            <div class="min-w-0 flex-1">
-              <router-link
-                class="text-sm font-medium text-n-slate-12 hover:underline"
-                :to="conversationRoute(conversation.id)"
-              >
-                #{{ conversation.id }}
-                <span v-if="conversation?.meta?.sender?.name">
-                  · {{ conversation.meta.sender.name }}
-                </span>
-              </router-link>
-              <div class="text-xs text-n-slate-11 truncate mt-0.5">
-                {{ conversationPreview(conversation) || '--' }}
+        <div class="grid gap-4 lg:grid-cols-12">
+          <div class="lg:col-span-8 shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 px-6 py-5">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex flex-col gap-1">
+                <div class="text-base font-medium text-n-slate-12">
+                  {{ t('AI_CONTROL_PANEL.CONVERSATIONS.HEADER') }}
+                </div>
+                <div class="text-sm text-n-slate-11">
+                  {{ t('AI_CONTROL_PANEL.CONVERSATIONS.DESCRIPTION') }}
+                </div>
               </div>
 
+              <Button
+                color="slate"
+                size="sm"
+                class="h-10"
+                :is-loading="isLiveConversationsLoading"
+                :label="t('AI_CONTROL_PANEL.CONVERSATIONS.REFRESH')"
+                @click="fetchLiveConversations"
+              />
+            </div>
+
+            <div
+              v-if="isLiveConversationsLoading && !liveConversations.length"
+              class="mt-4 text-sm text-n-slate-11"
+            >
+              {{ t('AI_CONTROL_PANEL.CONVERSATIONS.LOADING') }}
+            </div>
+
+            <div
+              v-else-if="!liveConversations.length"
+              class="mt-4 text-sm text-n-slate-11"
+            >
+              {{ t('AI_CONTROL_PANEL.CONVERSATIONS.EMPTY') }}
+            </div>
+
+            <div v-else class="mt-4 divide-y divide-n-weak">
               <div
-                v-if="conversationHandoverReasonLabels(conversation).length"
-                class="text-xs text-n-slate-11 truncate mt-1"
+                v-for="conversation in liveConversations"
+                :key="conversation.id"
+                class="flex items-start justify-between gap-4 py-3"
+                :class="
+                  isRiskConversation(conversation)
+                    ? 'border-l-4 border-l-n-ruby-9 pl-3'
+                    : 'border-l-4 border-l-transparent pl-3'
+                "
               >
-                <span class="font-medium text-n-slate-12">Reason:</span>
-                <span>
-                  {{ conversationHandoverReasonLabels(conversation).join(', ') }}
-                </span>
+                <div class="min-w-0 flex-1">
+                  <router-link
+                    class="text-sm font-medium text-n-slate-12 hover:underline"
+                    :to="conversationRoute(conversation.id)"
+                  >
+                    #{{ conversation.id }}
+                    <span v-if="conversation?.meta?.sender?.name">
+                      · {{ conversation.meta.sender.name }}
+                    </span>
+                  </router-link>
+
+                  <div class="text-xs text-n-slate-11 truncate mt-0.5">
+                    {{ conversationPreview(conversation) || '--' }}
+                  </div>
+
+                  <div
+                    v-if="conversationHandoverReasonLabels(conversation).length"
+                    class="text-xs text-n-slate-11 truncate mt-1"
+                  >
+                    <span class="font-medium text-n-slate-12">Reason:</span>
+                    <span>
+                      {{ conversationHandoverReasonLabels(conversation).join(', ') }}
+                    </span>
+                  </div>
+
+                  <div
+                    v-if="conversationAIMetadataLabels(conversation).length"
+                    class="flex flex-wrap gap-2 mt-2"
+                  >
+                    <span
+                      v-for="label in conversationAIMetadataLabels(conversation)"
+                      :key="label"
+                      class="text-xs rounded-md outline outline-1 outline-n-weak px-2 py-1 text-n-slate-12"
+                    >
+                      #{{ label }}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="flex flex-col items-end gap-2 shrink-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-base leading-none">
+                      {{ sentimentEmoji(conversation) }}
+                    </span>
+                    <span
+                      class="text-xs rounded-full outline outline-1 px-3 py-1 font-medium"
+                      :class="conversationModeClass(conversation)"
+                    >
+                      {{ conversationModeText(conversation) }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lg:col-span-4 flex flex-col gap-4">
+            <div class="shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 px-6 py-5">
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex flex-col gap-1">
+                  <div class="text-base font-medium text-n-slate-12">
+                    {{ t('AI_CONTROL_PANEL.TAKEOVER.HEADER') }}
+                  </div>
+                  <div class="text-sm text-n-slate-11">
+                    {{ t('AI_CONTROL_PANEL.TAKEOVER.DESCRIPTION') }}
+                  </div>
+                </div>
               </div>
 
-              <div
-                v-if="conversationAIMetadataLabels(conversation).length"
-                class="flex flex-wrap gap-2 mt-2"
-              >
+              <div class="grid gap-3 mt-4 md:grid-cols-[1fr_auto_auto] items-end">
+                <Input
+                  v-model="conversationDisplayId"
+                  :label="t('AI_CONTROL_PANEL.TAKEOVER.CONVERSATION_ID_LABEL')"
+                  :placeholder="t('AI_CONTROL_PANEL.TAKEOVER.CONVERSATION_ID_PLACEHOLDER')"
+                  @enter="refreshConversationLabels"
+                />
+
+                <Button
+                  color="slate"
+                  size="sm"
+                  class="h-10"
+                  :is-loading="isLabelsLoading"
+                  :label="t('AI_CONTROL_PANEL.TAKEOVER.CHECK_STATUS')"
+                  @click="refreshConversationLabels"
+                />
+
+                <Button
+                  :color="isPaused ? 'slate' : 'blue'"
+                  size="sm"
+                  class="h-10"
+                  :is-loading="isLabelsLoading"
+                  :label="isPaused ? t('AI_CONTROL_PANEL.TAKEOVER.RESUME') : t('AI_CONTROL_PANEL.TAKEOVER.PAUSE')"
+                  @click="setPause(!isPaused)"
+                />
+              </div>
+
+              <div class="mt-4 text-sm text-n-slate-11">
+                <span class="font-medium text-n-slate-12">{{ t('AI_CONTROL_PANEL.TAKEOVER.CURRENT_STATE') }}:</span>
+                <span v-if="conversationDisplayId && isPaused">{{ t('AI_CONTROL_PANEL.TAKEOVER.STATE_PAUSED') }}</span>
+                <span v-else-if="conversationDisplayId && !isPaused">{{ t('AI_CONTROL_PANEL.TAKEOVER.STATE_ACTIVE') }}</span>
+                <span v-else>--</span>
+              </div>
+
+              <div v-if="conversationDisplayId" class="mt-2">
+                <router-link
+                  class="text-sm text-n-blue-text hover:underline"
+                  :to="conversationRoute(conversationDisplayId)"
+                >
+                  {{ t('AI_CONTROL_PANEL.TAKEOVER.OPEN_CONVERSATION') }}
+                </router-link>
+              </div>
+
+              <div v-if="conversationLabels.length" class="flex flex-wrap gap-2 mt-3">
                 <span
-                  v-for="label in conversationAIMetadataLabels(conversation)"
+                  v-for="label in conversationLabels"
                   :key="label"
                   class="text-xs rounded-md outline outline-1 outline-n-weak px-2 py-1 text-n-slate-12"
                 >
@@ -576,121 +697,37 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div class="flex flex-col items-end gap-2 shrink-0">
-              <div class="flex items-center gap-2">
-                <span class="text-base leading-none">
-                  {{ sentimentEmoji(conversation) }}
-                </span>
-                <span
-                  class="text-xs rounded-md outline outline-1 px-2 py-1"
-                  :class="conversationModeClass(conversation)"
+            <div class="shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 px-6 py-5">
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex flex-col gap-1">
+                  <div class="text-base font-medium text-n-slate-12">
+                    {{ t('AI_CONTROL_PANEL.LABELS.HEADER') }}
+                  </div>
+                  <div class="text-sm text-n-slate-11">
+                    {{ t('AI_CONTROL_PANEL.LABELS.DESCRIPTION') }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid gap-2 mt-4">
+                <div
+                  v-for="row in trackedLabelRows"
+                  :key="row.name"
+                  class="flex items-center justify-between rounded-lg outline outline-1 outline-n-weak px-3 py-2"
                 >
-                  {{ conversationModeText(conversation) }}
-                </span>
+                  <router-link
+                    class="text-sm font-medium text-n-slate-12 hover:underline"
+                    :to="labelRoute(row.name)"
+                  >
+                    #{{ row.name }}
+                  </router-link>
+                  <div class="text-sm text-n-slate-11">
+                    {{ row.conversationsCount.toLocaleString() }}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      <div
-        class="shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 px-6 py-5"
-      >
-        <div class="flex items-center justify-between gap-3">
-          <div class="flex flex-col gap-1">
-            <div class="text-base font-medium text-n-slate-12">
-              {{ t('AI_CONTROL_PANEL.LABELS.HEADER') }}
-            </div>
-            <div class="text-sm text-n-slate-11">
-              {{ t('AI_CONTROL_PANEL.LABELS.DESCRIPTION') }}
-            </div>
-          </div>
-        </div>
-
-        <div class="grid gap-2 mt-4">
-          <div
-            v-for="row in trackedLabelRows"
-            :key="row.name"
-            class="flex items-center justify-between rounded-lg outline outline-1 outline-n-weak px-3 py-2"
-          >
-            <router-link
-              class="text-sm font-medium text-n-slate-12 hover:underline"
-              :to="labelRoute(row.name)"
-            >
-              #{{ row.name }}
-            </router-link>
-            <div class="text-sm text-n-slate-11">
-              {{ row.conversationsCount.toLocaleString() }}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div
-        class="shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 px-6 py-5"
-      >
-        <div class="flex items-center justify-between gap-3">
-          <div class="flex flex-col gap-1">
-            <div class="text-base font-medium text-n-slate-12">
-              {{ t('AI_CONTROL_PANEL.TAKEOVER.HEADER') }}
-            </div>
-            <div class="text-sm text-n-slate-11">
-              {{ t('AI_CONTROL_PANEL.TAKEOVER.DESCRIPTION') }}
-            </div>
-          </div>
-        </div>
-
-        <div class="grid gap-3 mt-4 md:grid-cols-[1fr_auto_auto] items-end">
-          <Input
-            v-model="conversationDisplayId"
-            :label="t('AI_CONTROL_PANEL.TAKEOVER.CONVERSATION_ID_LABEL')"
-            :placeholder="t('AI_CONTROL_PANEL.TAKEOVER.CONVERSATION_ID_PLACEHOLDER')"
-            @enter="refreshConversationLabels"
-          />
-
-          <Button
-            color="slate"
-            size="sm"
-            class="h-10"
-            :is-loading="isLabelsLoading"
-            :label="t('AI_CONTROL_PANEL.TAKEOVER.CHECK_STATUS')"
-            @click="refreshConversationLabels"
-          />
-
-          <Button
-            :color="isPaused ? 'slate' : 'blue'"
-            size="sm"
-            class="h-10"
-            :is-loading="isLabelsLoading"
-            :label="isPaused ? t('AI_CONTROL_PANEL.TAKEOVER.RESUME') : t('AI_CONTROL_PANEL.TAKEOVER.PAUSE')"
-            @click="setPause(!isPaused)"
-          />
-        </div>
-
-        <div class="mt-4 text-sm text-n-slate-11">
-          <span class="font-medium text-n-slate-12">{{ t('AI_CONTROL_PANEL.TAKEOVER.CURRENT_STATE') }}:</span>
-          <span v-if="conversationDisplayId && isPaused">{{ t('AI_CONTROL_PANEL.TAKEOVER.STATE_PAUSED') }}</span>
-          <span v-else-if="conversationDisplayId && !isPaused">{{ t('AI_CONTROL_PANEL.TAKEOVER.STATE_ACTIVE') }}</span>
-          <span v-else>--</span>
-        </div>
-
-        <div v-if="conversationDisplayId" class="mt-2">
-          <router-link
-            class="text-sm text-n-blue-text hover:underline"
-            :to="conversationRoute(conversationDisplayId)"
-          >
-            {{ t('AI_CONTROL_PANEL.TAKEOVER.OPEN_CONVERSATION') }}
-          </router-link>
-        </div>
-
-        <div v-if="conversationLabels.length" class="flex flex-wrap gap-2 mt-3">
-          <span
-            v-for="label in conversationLabels"
-            :key="label"
-            class="text-xs rounded-md outline outline-1 outline-n-weak px-2 py-1 text-n-slate-12"
-          >
-            #{{ label }}
-          </span>
         </div>
       </div>
     </div>
