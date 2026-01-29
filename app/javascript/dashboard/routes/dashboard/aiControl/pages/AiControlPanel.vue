@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { useI18n } from 'vue-i18n';
 
 import ReportsAPI from 'dashboard/api/reports';
 import SummaryReportsAPI from 'dashboard/api/summaryReports';
@@ -10,19 +9,18 @@ import InboxConversationAPI from 'dashboard/api/inbox/conversation';
 
 import ReportHeader from '../../settings/reports/components/ReportHeader.vue';
 import ReportFilterSelector from '../../settings/reports/components/FilterSelector.vue';
-import ReportMetricCard from '../../settings/reports/components/ReportMetricCard.vue';
 
 import Button from 'dashboard/components-next/button/Button.vue';
-import Input from 'dashboard/components-next/input/Input.vue';
 
 import { useAlert } from 'dashboard/composables';
 import { emitter } from 'shared/helpers/mitt';
 
 const route = useRoute();
-const { t } = useI18n();
 
 const from = ref(0);
 const to = ref(0);
+
+const activeKpiTab = ref('traffic');
 
 const trafficConversationCount = ref(0);
 const aiResolvedConversationCount = ref(0);
@@ -34,25 +32,17 @@ const labelSummary = ref([]);
 const liveConversations = ref([]);
 const isLiveConversationsLoading = ref(false);
 
-const conversationDisplayId = ref('');
-const conversationLabels = ref([]);
-const isLabelsLoading = ref(false);
-
 const PAUSE_LABEL = 'ai_paused';
 const BOT_BLOCK_LABEL = 'khongtraloibangai';
+
+const takeoverLoadingMap = ref({});
+const isTakeoverAllLoading = ref(false);
 
 const riskConversationIds = ref(new Set());
 const isRiskBannerVisible = ref(false);
 const isRiskBannerBlinking = ref(false);
 const riskBannerText = ref('');
 const riskAudio = ref(null);
-
-const isPaused = computed(() => {
-  return Array.isArray(conversationLabels.value)
-    ? conversationLabels.value.includes(PAUSE_LABEL) ||
-        conversationLabels.value.includes(BOT_BLOCK_LABEL)
-    : false;
-});
 
 const formatCount = value => {
   return Number(value || 0).toLocaleString();
@@ -74,6 +64,38 @@ const aiHandoffText = computed(() => {
   const handoff = Number(aiHandoffConversationCount.value || 0);
   const rate = total ? Math.round((handoff / total) * 100) : 0;
   return `${formatCount(handoff)} (${rate}%)`;
+});
+
+const formatDate = timestamp => {
+  const value = Number(timestamp || 0);
+  if (!value) return '';
+  try {
+    return new Date(value * 1000).toLocaleDateString('vi-VN');
+  } catch (e) {
+    return '';
+  }
+};
+
+const dateRangeText = computed(() => {
+  const fromText = formatDate(from.value);
+  const toText = formatDate(to.value);
+  if (!fromText || !toText) return '';
+  return `${fromText} → ${toText}`;
+});
+
+const averageBotMessagesPerConversation = computed(() => {
+  const conversations = Number(trafficConversationCount.value || 0);
+  const messages = Number(String(botMessageCount.value || '0').replace(/,/g, '') || 0);
+  if (!conversations) return 0;
+  return Math.round((messages / conversations) * 10) / 10;
+});
+
+const topHandoverReasons = computed(() => {
+  const rows = Array.isArray(labelSummary.value) ? labelSummary.value : [];
+  return rows
+    .filter(r => String(r?.name || '').startsWith('handover_'))
+    .sort((a, b) => (b.conversationsCount || 0) - (a.conversationsCount || 0))
+    .slice(0, 5);
 });
 
 const normalizeLabelSummary = summary => {
@@ -112,6 +134,51 @@ const trackedLabelRows = computed(() => {
   });
 });
 
+const labelDisplayName = name => {
+  const map = {
+    intent_booking_confirmed: 'AI chốt lịch thành công',
+    ai_handoff: 'Chuyển nhân viên',
+    ai_upset: 'Khách bực / tiêu cực',
+    ai_urgent: 'Ưu tiên gấp',
+    ai_lead: 'Khách tiềm năng',
+    ai_lead_high: 'Khách tiềm năng (tốt)',
+    ai_lead_medium: 'Khách tiềm năng (trung bình)',
+    ai_lead_low: 'Khách tiềm năng (kém)',
+    ai_paused: 'Đang dừng AI',
+    khongtraloibangai: 'Không trả lời bằng AI',
+  };
+  return map[name] || name;
+};
+
+const labelTone = name => {
+  const map = {
+    intent_booking_confirmed: 'teal',
+    ai_handoff: 'ruby',
+    ai_upset: 'ruby',
+    ai_urgent: 'amber',
+    ai_lead: 'blue',
+    ai_lead_high: 'teal',
+    ai_lead_medium: 'amber',
+    ai_lead_low: 'ruby',
+    ai_paused: 'slate',
+    khongtraloibangai: 'slate',
+  };
+  return map[name] || 'slate';
+};
+
+const labelPercent = row => {
+  const total = Number(trafficConversationCount.value || 0);
+  const count = Number(row?.conversationsCount || 0);
+  if (!total) return 0;
+  return Math.min(100, Math.round((count / total) * 100));
+};
+
+const kpiTabClass = key => {
+  return activeKpiTab.value === key
+    ? 'outline-n-slate-12 ring-2 ring-n-slate-12/10'
+    : 'outline-n-container hover:outline-n-slate-10';
+};
+
 const labelRoute = label => {
   return {
     name: 'label_conversations',
@@ -137,15 +204,27 @@ const isConversationInHumanMode = conversation => {
   return labels.includes(PAUSE_LABEL) || labels.includes(BOT_BLOCK_LABEL);
 };
 
+const isConversationPaused = conversation => {
+  return isConversationInHumanMode(conversation);
+};
+
+const isAllPaused = computed(() => {
+  const conversations = Array.isArray(liveConversations.value)
+    ? liveConversations.value
+    : [];
+  if (!conversations.length) return false;
+  return conversations.every(isConversationPaused);
+});
+
 const conversationModeText = conversation => {
   return isConversationInHumanMode(conversation)
-    ? t('AI_CONTROL_PANEL.CONVERSATIONS.MODE_HUMAN')
-    : t('AI_CONTROL_PANEL.CONVERSATIONS.MODE_AI');
+    ? 'Nhân viên'
+    : 'AI';
 };
 
 const conversationModeClass = conversation => {
   return isConversationInHumanMode(conversation)
-    ? 'bg-n-slate-3 text-n-slate-11 outline-n-slate-4'
+    ? 'bg-n-amber-3 text-n-slate-12 outline-n-amber-6'
     : 'bg-n-teal-3 text-n-teal-11 outline-n-teal-4';
 };
 
@@ -172,6 +251,19 @@ const conversationAIMetadataLabels = conversation => {
 const conversationHandoverReasonLabels = conversation => {
   const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
   return labels.filter(label => String(label || '').startsWith('handover_')).slice(0, 3);
+};
+
+const handoverReasonDisplay = label => {
+  const raw = String(label || '');
+  const key = raw.replace(/^handover_/, '').toLowerCase();
+  const map = {
+    khach_yeu_cau: 'Khách yêu cầu gặp người',
+    ngoai_pham_vi: 'Ngoài phạm vi AI',
+    sales_opportunity: 'Cơ hội chốt đơn',
+    negative_sentiment: 'Khách tiêu cực',
+  };
+  if (map[key]) return map[key];
+  return key ? key.replace(/_/g, ' ') : raw;
 };
 
 const conversationAIMetadata = conversation => {
@@ -297,7 +389,7 @@ const playRiskSound = async () => {
     }
     await riskAudio.value.play();
   } catch (error) {
-    useAlert('Risk alert sound blocked by browser permissions');
+    useAlert('Trình duyệt đang chặn âm thanh cảnh báo. Hãy cho phép âm thanh để nhận cảnh báo.');
   }
 };
 
@@ -317,7 +409,7 @@ const updateRiskBanner = async () => {
     return;
   }
 
-  riskBannerText.value = `High risk conversations: ${nextIds.size}`;
+  riskBannerText.value = `Cảnh báo rủi ro: ${nextIds.size} hội thoại cần ưu tiên`;
   isRiskBannerBlinking.value = hasNew;
   if (hasNew) {
     useAlert(riskBannerText.value);
@@ -347,7 +439,7 @@ const fetchLiveConversations = async () => {
     await updateRiskBanner();
   } catch (e) {
     liveConversations.value = [];
-    useAlert(t('REPORT.DATA_FETCHING_FAILED'));
+    useAlert('Không tải được danh sách hội thoại.');
   } finally {
     isLiveConversationsLoading.value = false;
   }
@@ -363,7 +455,7 @@ const fetchAll = async () => {
       fetchLiveConversations(),
     ]);
   } catch (e) {
-    useAlert(t('REPORT.DATA_FETCHING_FAILED'));
+    useAlert('Không tải được dữ liệu báo cáo.');
   }
 };
 
@@ -373,32 +465,11 @@ const onFilterChange = async ({ from: nextFrom, to: nextTo }) => {
   await fetchAll();
 };
 
-const refreshConversationLabels = async () => {
-  const id = String(conversationDisplayId.value || '').trim();
-  if (!id) {
-    conversationLabels.value = [];
-    return;
-  }
+const setConversationPause = async (conversationId, shouldPause) => {
+  const id = String(conversationId || '').trim();
+  if (!id) return;
 
-  isLabelsLoading.value = true;
-  try {
-    const response = await ConversationLabelsAPI.getLabels(id);
-    conversationLabels.value = response?.data?.payload || [];
-  } catch (e) {
-    useAlert(t('CONVERSATION.CHANGE_STATUS_FAILED'));
-  } finally {
-    isLabelsLoading.value = false;
-  }
-};
-
-const setPause = async shouldPause => {
-  const id = String(conversationDisplayId.value || '').trim();
-  if (!id) {
-    useAlert(t('AI_CONTROL_PANEL.TAKEOVER.MISSING_CONVERSATION_ID'));
-    return;
-  }
-
-  isLabelsLoading.value = true;
+  takeoverLoadingMap.value = { ...takeoverLoadingMap.value, [id]: true };
   try {
     const response = await ConversationLabelsAPI.getLabels(id);
     const currentLabels = response?.data?.payload || [];
@@ -413,11 +484,46 @@ const setPause = async shouldPause => {
     }
 
     await ConversationLabelsAPI.updateLabels(id, Array.from(next));
-    await refreshConversationLabels();
+
+    liveConversations.value = (liveConversations.value || []).map(c => {
+      if (String(c?.id) !== id) return c;
+      return { ...c, labels: Array.from(next) };
+    });
   } catch (e) {
-    useAlert(t('CONVERSATION.CHANGE_STATUS_FAILED'));
+    useAlert('Không thể cập nhật trạng thái dừng AI cho hội thoại này.');
   } finally {
-    isLabelsLoading.value = false;
+    const nextMap = { ...takeoverLoadingMap.value };
+    delete nextMap[id];
+    takeoverLoadingMap.value = nextMap;
+  }
+};
+
+const toggleConversationPause = async conversation => {
+  const id = String(conversation?.id || '').trim();
+  if (!id) return;
+  const shouldPause = !isConversationPaused(conversation);
+  await setConversationPause(id, shouldPause);
+};
+
+const togglePauseAll = async () => {
+  const conversations = Array.isArray(liveConversations.value)
+    ? liveConversations.value
+    : [];
+  if (!conversations.length) return;
+
+  const shouldPause = !isAllPaused.value;
+  isTakeoverAllLoading.value = true;
+  try {
+    for (const c of conversations) {
+      const id = String(c?.id || '').trim();
+      if (!id) continue;
+      await setConversationPause(id, shouldPause);
+    }
+    if (to.value && from.value) {
+      await Promise.all([fetchTrafficSummary(), fetchBotMetrics(), fetchLabelSummary()]);
+    }
+  } finally {
+    isTakeoverAllLoading.value = false;
   }
 };
 
@@ -440,8 +546,8 @@ onBeforeUnmount(() => {
   <div class="overflow-auto bg-n-background w-full px-6">
     <div class="max-w-[80rem] mx-auto pb-12">
       <ReportHeader
-        :header-title="t('AI_CONTROL_PANEL.HEADER')"
-        :header-description="t('AI_CONTROL_PANEL.DESCRIPTION')"
+        header-title="Bảng điều khiển AI"
+        header-description="Theo dõi hiệu suất, rủi ro và vận hành AI theo thời gian thực"
       />
 
       <div class="flex flex-col gap-4 pb-6">
@@ -463,7 +569,7 @@ onBeforeUnmount(() => {
               size="sm"
               class="h-9"
               :is-loading="isLiveConversationsLoading"
-              :label="t('AI_CONTROL_PANEL.CONVERSATIONS.REFRESH')"
+              label="Làm mới"
               @click="fetchLiveConversations"
             />
           </div>
@@ -478,51 +584,165 @@ onBeforeUnmount(() => {
         />
 
         <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <div class="rounded-xl outline outline-1 outline-n-blue-4 bg-n-blue-3 px-5 py-4">
+          <div
+            class="rounded-xl outline outline-1 bg-n-blue-3 px-5 py-4 cursor-pointer"
+            :class="kpiTabClass('traffic')"
+            @click="activeKpiTab = 'traffic'"
+          >
             <div class="text-xs font-medium text-n-blue-12">
-              {{ t('AI_CONTROL_PANEL.METRICS.TRAFFIC') }}
+              Lưu lượng
             </div>
             <div class="mt-1 text-3xl font-semibold text-n-blue-12">
               {{ trafficConversationCountText }}
             </div>
             <div class="mt-1 text-xs text-n-blue-11">
-              {{ t('AI_CONTROL_PANEL.METRICS.TRAFFIC_HELP') }}
+              Tổng số hội thoại trong khoảng thời gian
             </div>
           </div>
 
-          <div class="rounded-xl outline outline-1 outline-n-teal-4 bg-n-teal-3 px-5 py-4">
+          <div
+            class="rounded-xl outline outline-1 bg-n-teal-3 px-5 py-4 cursor-pointer"
+            :class="kpiTabClass('ai_resolved')"
+            @click="activeKpiTab = 'ai_resolved'"
+          >
             <div class="text-xs font-medium text-n-teal-12">
-              {{ t('AI_CONTROL_PANEL.METRICS.AI_AUTOMATION') }}
+              AI tự xử lý
             </div>
             <div class="mt-1 text-3xl font-semibold text-n-teal-12">
               {{ aiAutomationText }}
             </div>
             <div class="mt-1 text-xs text-n-teal-11">
-              {{ t('AI_CONTROL_PANEL.METRICS.AI_AUTOMATION_HELP') }}
+              Tính theo nhãn: #intent_booking_confirmed
             </div>
           </div>
 
-          <div class="rounded-xl outline outline-1 outline-n-ruby-4 bg-n-ruby-3 px-5 py-4">
+          <div
+            class="rounded-xl outline outline-1 bg-n-ruby-3 px-5 py-4 cursor-pointer"
+            :class="kpiTabClass('handoff')"
+            @click="activeKpiTab = 'handoff'"
+          >
             <div class="text-xs font-medium text-n-ruby-12">
-              {{ t('AI_CONTROL_PANEL.METRICS.AI_HANDOFF') }}
+              AI chuyển nhân viên
             </div>
             <div class="mt-1 text-3xl font-semibold text-n-ruby-12">
               {{ aiHandoffText }}
             </div>
             <div class="mt-1 text-xs text-n-ruby-11">
-              {{ t('AI_CONTROL_PANEL.METRICS.AI_HANDOFF_HELP') }}
+              Số hội thoại chuyển cho nhân viên
             </div>
           </div>
 
-          <div class="rounded-xl outline outline-1 outline-n-container bg-n-solid-2 px-5 py-4">
+          <div
+            class="rounded-xl outline outline-1 bg-n-solid-2 px-5 py-4 cursor-pointer"
+            :class="kpiTabClass('bot_messages')"
+            @click="activeKpiTab = 'bot_messages'"
+          >
             <div class="text-xs font-medium text-n-slate-12">
-              {{ t('AI_CONTROL_PANEL.METRICS.TOTAL_MESSAGES') }}
+              Tổng tin nhắn bot
             </div>
             <div class="mt-1 text-3xl font-semibold text-n-slate-12">
               {{ botMessageCount }}
             </div>
             <div class="mt-1 text-xs text-n-slate-11">
-              {{ t('AI_CONTROL_PANEL.METRICS.TOTAL_MESSAGES_HELP') }}
+              Tổng số tin nhắn bot gửi đi
+            </div>
+          </div>
+        </div>
+
+        <div class="shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 px-6 py-5">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex flex-col gap-1">
+              <div class="text-base font-medium text-n-slate-12">
+                Chi tiết
+              </div>
+              <div v-if="dateRangeText" class="text-sm text-n-slate-11">
+                Khoảng thời gian: {{ dateRangeText }}
+              </div>
+            </div>
+          </div>
+
+          <div v-if="activeKpiTab === 'traffic'" class="mt-4 grid gap-3">
+            <div class="text-sm text-n-slate-12">
+              Lưu lượng là tổng số hội thoại trong khoảng thời gian đã chọn.
+            </div>
+            <div class="grid gap-2 md:grid-cols-2">
+              <div class="rounded-lg outline outline-1 outline-n-weak px-4 py-3">
+                <div class="text-xs text-n-slate-11">Tổng hội thoại</div>
+                <div class="text-2xl font-semibold text-n-slate-12">{{ trafficConversationCountText }}</div>
+              </div>
+              <div class="rounded-lg outline outline-1 outline-n-weak px-4 py-3">
+                <div class="text-xs text-n-slate-11">Hội thoại đang mở</div>
+                <div class="text-2xl font-semibold text-n-slate-12">{{ (liveConversations || []).length.toLocaleString() }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else-if="activeKpiTab === 'ai_resolved'" class="mt-4 grid gap-3">
+            <div class="text-sm text-n-slate-12">
+              AI tự xử lý được tính khi hội thoại có nhãn <span class="font-medium">#intent_booking_confirmed</span>.
+            </div>
+            <div class="grid gap-2 md:grid-cols-2">
+              <div class="rounded-lg outline outline-1 outline-n-weak px-4 py-3">
+                <div class="text-xs text-n-slate-11">Số hội thoại AI chốt lịch</div>
+                <div class="text-2xl font-semibold text-n-slate-12">{{ aiAutomationText }}</div>
+              </div>
+              <router-link
+                class="rounded-lg outline outline-1 outline-n-weak px-4 py-3 hover:underline"
+                :to="labelRoute('intent_booking_confirmed')"
+              >
+                <div class="text-xs text-n-slate-11">Xem danh sách</div>
+                <div class="text-sm font-medium text-n-slate-12">Danh sách hội thoại #intent_booking_confirmed</div>
+              </router-link>
+            </div>
+          </div>
+
+          <div v-else-if="activeKpiTab === 'handoff'" class="mt-4 grid gap-3">
+            <div class="text-sm text-n-slate-12">
+              AI chuyển nhân viên là các hội thoại AI chuyển cho nhân viên xử lý (nhãn <span class="font-medium">#ai_handoff</span>).
+            </div>
+
+            <div class="grid gap-2 md:grid-cols-2">
+              <div class="rounded-lg outline outline-1 outline-n-weak px-4 py-3">
+                <div class="text-xs text-n-slate-11">Tổng chuyển nhân viên</div>
+                <div class="text-2xl font-semibold text-n-slate-12">{{ aiHandoffText }}</div>
+              </div>
+              <router-link
+                class="rounded-lg outline outline-1 outline-n-weak px-4 py-3 hover:underline"
+                :to="labelRoute('ai_handoff')"
+              >
+                <div class="text-xs text-n-slate-11">Xem danh sách</div>
+                <div class="text-sm font-medium text-n-slate-12">Danh sách hội thoại #ai_handoff</div>
+              </router-link>
+            </div>
+
+            <div v-if="topHandoverReasons.length" class="rounded-lg outline outline-1 outline-n-weak px-4 py-3">
+              <div class="text-sm font-medium text-n-slate-12">5 lý do chuyển nhân viên nhiều nhất</div>
+              <div class="mt-2 grid gap-2">
+                <div
+                  v-for="row in topHandoverReasons"
+                  :key="row.name"
+                  class="flex items-center justify-between"
+                >
+                  <div class="text-sm text-n-slate-12">{{ handoverReasonDisplay(row.name) }}</div>
+                  <div class="text-sm text-n-slate-11">{{ row.conversationsCount.toLocaleString() }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="mt-4 grid gap-3">
+            <div class="text-sm text-n-slate-12">
+              Tổng tin nhắn bot là tổng số tin nhắn bot gửi đi trong khoảng thời gian.
+            </div>
+            <div class="grid gap-2 md:grid-cols-2">
+              <div class="rounded-lg outline outline-1 outline-n-weak px-4 py-3">
+                <div class="text-xs text-n-slate-11">Tổng tin nhắn bot</div>
+                <div class="text-2xl font-semibold text-n-slate-12">{{ botMessageCount }}</div>
+              </div>
+              <div class="rounded-lg outline outline-1 outline-n-weak px-4 py-3">
+                <div class="text-xs text-n-slate-11">Trung bình / hội thoại</div>
+                <div class="text-2xl font-semibold text-n-slate-12">{{ averageBotMessagesPerConversation.toLocaleString() }}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -532,10 +752,10 @@ onBeforeUnmount(() => {
             <div class="flex items-center justify-between gap-3">
               <div class="flex flex-col gap-1">
                 <div class="text-base font-medium text-n-slate-12">
-                  {{ t('AI_CONTROL_PANEL.CONVERSATIONS.HEADER') }}
+                  Hội thoại đang diễn ra
                 </div>
                 <div class="text-sm text-n-slate-11">
-                  {{ t('AI_CONTROL_PANEL.CONVERSATIONS.DESCRIPTION') }}
+                  Danh sách hội thoại đang mở (AI / Nhân viên)
                 </div>
               </div>
 
@@ -544,7 +764,7 @@ onBeforeUnmount(() => {
                 size="sm"
                 class="h-10"
                 :is-loading="isLiveConversationsLoading"
-                :label="t('AI_CONTROL_PANEL.CONVERSATIONS.REFRESH')"
+                label="Làm mới"
                 @click="fetchLiveConversations"
               />
             </div>
@@ -553,14 +773,14 @@ onBeforeUnmount(() => {
               v-if="isLiveConversationsLoading && !liveConversations.length"
               class="mt-4 text-sm text-n-slate-11"
             >
-              {{ t('AI_CONTROL_PANEL.CONVERSATIONS.LOADING') }}
+              Đang tải...
             </div>
 
             <div
               v-else-if="!liveConversations.length"
               class="mt-4 text-sm text-n-slate-11"
             >
-              {{ t('AI_CONTROL_PANEL.CONVERSATIONS.EMPTY') }}
+              Chưa có hội thoại nào.
             </div>
 
             <div v-else class="mt-4 divide-y divide-n-weak">
@@ -593,9 +813,9 @@ onBeforeUnmount(() => {
                     v-if="conversationHandoverReasonLabels(conversation).length"
                     class="text-xs text-n-slate-11 truncate mt-1"
                   >
-                    <span class="font-medium text-n-slate-12">Reason:</span>
+                    <span class="font-medium text-n-slate-12">Lý do:</span>
                     <span>
-                      {{ conversationHandoverReasonLabels(conversation).join(', ') }}
+                      {{ conversationHandoverReasonLabels(conversation).map(handoverReasonDisplay).join(', ') }}
                     </span>
                   </div>
 
@@ -625,6 +845,15 @@ onBeforeUnmount(() => {
                       {{ conversationModeText(conversation) }}
                     </span>
                   </div>
+
+                  <Button
+                    :color="isConversationPaused(conversation) ? 'blue' : 'slate'"
+                    size="sm"
+                    class="h-9"
+                    :is-loading="Boolean(takeoverLoadingMap[String(conversation.id)])"
+                    :label="isConversationPaused(conversation) ? 'Mở AI' : 'Dừng AI'"
+                    @click="toggleConversationPause(conversation)"
+                  />
                 </div>
               </div>
             </div>
@@ -635,65 +864,28 @@ onBeforeUnmount(() => {
               <div class="flex items-center justify-between gap-3">
                 <div class="flex flex-col gap-1">
                   <div class="text-base font-medium text-n-slate-12">
-                    {{ t('AI_CONTROL_PANEL.TAKEOVER.HEADER') }}
+                    Điều khiển nhanh
                   </div>
                   <div class="text-sm text-n-slate-11">
-                    {{ t('AI_CONTROL_PANEL.TAKEOVER.DESCRIPTION') }}
+                    Dừng/Mở AI cho toàn bộ hội thoại đang mở
                   </div>
                 </div>
               </div>
 
-              <div class="grid gap-3 mt-4 md:grid-cols-[1fr_auto_auto] items-end">
-                <Input
-                  v-model="conversationDisplayId"
-                  :label="t('AI_CONTROL_PANEL.TAKEOVER.CONVERSATION_ID_LABEL')"
-                  :placeholder="t('AI_CONTROL_PANEL.TAKEOVER.CONVERSATION_ID_PLACEHOLDER')"
-                  @enter="refreshConversationLabels"
-                />
-
+              <div class="mt-4 grid gap-3">
                 <Button
-                  color="slate"
+                  :color="isAllPaused ? 'blue' : 'ruby'"
                   size="sm"
                   class="h-10"
-                  :is-loading="isLabelsLoading"
-                  :label="t('AI_CONTROL_PANEL.TAKEOVER.CHECK_STATUS')"
-                  @click="refreshConversationLabels"
+                  :is-loading="isTakeoverAllLoading"
+                  :label="isAllPaused ? 'Mở AI tất cả' : 'Dừng AI tất cả'"
+                  @click="togglePauseAll"
                 />
 
-                <Button
-                  :color="isPaused ? 'slate' : 'blue'"
-                  size="sm"
-                  class="h-10"
-                  :is-loading="isLabelsLoading"
-                  :label="isPaused ? t('AI_CONTROL_PANEL.TAKEOVER.RESUME') : t('AI_CONTROL_PANEL.TAKEOVER.PAUSE')"
-                  @click="setPause(!isPaused)"
-                />
-              </div>
-
-              <div class="mt-4 text-sm text-n-slate-11">
-                <span class="font-medium text-n-slate-12">{{ t('AI_CONTROL_PANEL.TAKEOVER.CURRENT_STATE') }}:</span>
-                <span v-if="conversationDisplayId && isPaused">{{ t('AI_CONTROL_PANEL.TAKEOVER.STATE_PAUSED') }}</span>
-                <span v-else-if="conversationDisplayId && !isPaused">{{ t('AI_CONTROL_PANEL.TAKEOVER.STATE_ACTIVE') }}</span>
-                <span v-else>--</span>
-              </div>
-
-              <div v-if="conversationDisplayId" class="mt-2">
-                <router-link
-                  class="text-sm text-n-blue-text hover:underline"
-                  :to="conversationRoute(conversationDisplayId)"
-                >
-                  {{ t('AI_CONTROL_PANEL.TAKEOVER.OPEN_CONVERSATION') }}
-                </router-link>
-              </div>
-
-              <div v-if="conversationLabels.length" class="flex flex-wrap gap-2 mt-3">
-                <span
-                  v-for="label in conversationLabels"
-                  :key="label"
-                  class="text-xs rounded-md outline outline-1 outline-n-weak px-2 py-1 text-n-slate-12"
-                >
-                  #{{ label }}
-                </span>
+                <div class="text-xs text-n-slate-11">
+                  Trạng thái: <span class="font-medium text-n-slate-12">{{ isAllPaused ? 'Đang dừng' : 'Đang chạy' }}</span>
+                  · Áp dụng cho danh sách hội thoại đang mở.
+                </div>
               </div>
             </div>
 
@@ -701,28 +893,55 @@ onBeforeUnmount(() => {
               <div class="flex items-center justify-between gap-3">
                 <div class="flex flex-col gap-1">
                   <div class="text-base font-medium text-n-slate-12">
-                    {{ t('AI_CONTROL_PANEL.LABELS.HEADER') }}
+                    Tổng quan nhãn AI
                   </div>
                   <div class="text-sm text-n-slate-11">
-                    {{ t('AI_CONTROL_PANEL.LABELS.DESCRIPTION') }}
+                    Thống kê theo nhãn (label) để theo dõi hiệu suất và rủi ro
                   </div>
                 </div>
               </div>
 
-              <div class="grid gap-2 mt-4">
+              <div class="grid gap-3 mt-4">
                 <div
                   v-for="row in trackedLabelRows"
                   :key="row.name"
-                  class="flex items-center justify-between rounded-lg outline outline-1 outline-n-weak px-3 py-2"
+                  class="rounded-lg outline outline-1 outline-n-weak px-3 py-3"
                 >
-                  <router-link
-                    class="text-sm font-medium text-n-slate-12 hover:underline"
-                    :to="labelRoute(row.name)"
-                  >
-                    #{{ row.name }}
-                  </router-link>
-                  <div class="text-sm text-n-slate-11">
-                    {{ row.conversationsCount.toLocaleString() }}
+                  <div class="flex items-start justify-between gap-3">
+                    <router-link
+                      class="text-sm font-medium text-n-slate-12 hover:underline"
+                      :to="labelRoute(row.name)"
+                    >
+                      {{ labelDisplayName(row.name) }}
+                    </router-link>
+
+                    <div class="text-sm text-n-slate-11">
+                      {{ row.conversationsCount.toLocaleString() }}
+                      <span class="text-xs">({{ labelPercent(row) }}%)</span>
+                    </div>
+                  </div>
+
+                  <div class="mt-2 h-2 rounded-full bg-n-alpha-2 overflow-hidden">
+                    <div
+                      class="h-full rounded-full"
+                      :class="
+                        labelTone(row.name) === 'teal'
+                          ? 'bg-n-teal-9'
+                          : labelTone(row.name) === 'ruby'
+                            ? 'bg-n-ruby-9'
+                            : labelTone(row.name) === 'amber'
+                              ? 'bg-n-amber-9'
+                              : labelTone(row.name) === 'blue'
+                                ? 'bg-n-blue-9'
+                                : 'bg-n-slate-9'
+                      "
+                      :style="{ width: `${labelPercent(row)}%` }"
+                    />
+                  </div>
+
+                  <div class="mt-2 text-xs text-n-slate-11">
+                    <span class="font-medium text-n-slate-12">Nhãn:</span>
+                    <span class="ml-1">#{{ row.name }}</span>
                   </div>
                 </div>
               </div>
