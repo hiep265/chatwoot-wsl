@@ -39,10 +39,18 @@ const conversationLabels = ref([]);
 const isLabelsLoading = ref(false);
 
 const PAUSE_LABEL = 'ai_paused';
+const BOT_BLOCK_LABEL = 'khongtraloibangai';
+
+const riskConversationIds = ref(new Set());
+const isRiskBannerVisible = ref(false);
+const isRiskBannerBlinking = ref(false);
+const riskBannerText = ref('');
+const riskAudio = ref(null);
 
 const isPaused = computed(() => {
   return Array.isArray(conversationLabels.value)
-    ? conversationLabels.value.includes(PAUSE_LABEL)
+    ? conversationLabels.value.includes(PAUSE_LABEL) ||
+        conversationLabels.value.includes(BOT_BLOCK_LABEL)
     : false;
 });
 
@@ -83,10 +91,14 @@ const trackedLabelNames = computed(() => {
   return [
     'ai_handoff',
     'ai_lead',
+    'ai_lead_high',
+    'ai_lead_medium',
+    'ai_lead_low',
     'ai_urgent',
     'ai_upset',
     'ai_paused',
     'khongtraloibangai',
+    'intent_booking_confirmed',
   ];
 });
 
@@ -122,7 +134,7 @@ const conversationRoute = conversationId => {
 
 const isConversationInHumanMode = conversation => {
   const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
-  return labels.includes(PAUSE_LABEL) || labels.includes('khongtraloibangai');
+  return labels.includes(PAUSE_LABEL) || labels.includes(BOT_BLOCK_LABEL);
 };
 
 const conversationModeText = conversation => {
@@ -153,13 +165,31 @@ const conversationAIMetadataLabels = conversation => {
   const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
   return labels
     .filter(label => trackedLabelNames.value.includes(label))
-    .filter(label => ![PAUSE_LABEL, 'khongtraloibangai'].includes(label))
+    .filter(label => ![PAUSE_LABEL, BOT_BLOCK_LABEL].includes(label))
     .slice(0, 5);
+};
+
+const conversationHandoverReasonLabels = conversation => {
+  const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
+  return labels.filter(label => String(label || '').startsWith('handover_')).slice(0, 3);
+};
+
+const conversationAIMetadata = conversation => {
+  const message =
+    conversation?.last_non_activity_message || conversation?.messages?.[0] || {};
+  const metadata = message?.content_attributes?.ai_metadata;
+  return metadata && typeof metadata === 'object' ? metadata : null;
 };
 
 const sentimentVariant = conversation => {
   const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
   if (labels.includes('ai_upset')) return 'negative';
+
+  const aiMetadata = conversationAIMetadata(conversation);
+  const metaSentiment = String(aiMetadata?.sentiment_score || '').toLowerCase();
+  if (metaSentiment === 'negative') return 'negative';
+  if (metaSentiment === 'positive') return 'positive';
+  if (metaSentiment === 'neutral') return 'neutral';
 
   const message =
     conversation?.last_non_activity_message || conversation?.messages?.[0] || {};
@@ -222,7 +252,6 @@ const fetchBotSummary = async () => {
     businessHours: false,
   });
   const data = response?.data || {};
-
   aiResolvedConversationCount.value = Number(data.bot_resolutions_count || 0);
   aiHandoffConversationCount.value = Number(data.bot_handoffs_count || 0);
 };
@@ -245,6 +274,58 @@ const fetchLabelSummary = async () => {
     businessHours: false,
   });
   labelSummary.value = normalizeLabelSummary(response?.data);
+
+  const map = new Map(labelSummary.value.map(row => [row.name, row]));
+  aiResolvedConversationCount.value = Number(
+    map.get('intent_booking_confirmed')?.conversationsCount || 0
+  );
+  aiHandoffConversationCount.value = Number(
+    map.get('ai_handoff')?.conversationsCount || 0
+  );
+};
+
+const isRiskConversation = conversation => {
+  const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
+  return labels.includes('ai_urgent') || labels.includes('ai_upset') || labels.includes('ai_handoff');
+};
+
+const playRiskSound = async () => {
+  try {
+    if (!riskAudio.value) {
+      riskAudio.value = new Audio('/audio/dashboard/ding.mp3');
+      riskAudio.value.load();
+    }
+    await riskAudio.value.play();
+  } catch (error) {
+    useAlert('Risk alert sound blocked by browser permissions');
+  }
+};
+
+const updateRiskBanner = async () => {
+  const risky = (liveConversations.value || []).filter(isRiskConversation);
+  const nextIds = new Set(risky.map(c => String(c?.id || '')).filter(Boolean));
+
+  const prevIds = riskConversationIds.value;
+  const hasNew = Array.from(nextIds).some(id => !prevIds.has(id));
+  const hasAny = nextIds.size > 0;
+
+  riskConversationIds.value = nextIds;
+  isRiskBannerVisible.value = hasAny;
+  if (!hasAny) {
+    isRiskBannerBlinking.value = false;
+    riskBannerText.value = '';
+    return;
+  }
+
+  riskBannerText.value = `High risk conversations: ${nextIds.size}`;
+  isRiskBannerBlinking.value = hasNew;
+  if (hasNew) {
+    useAlert(riskBannerText.value);
+    await playRiskSound();
+    setTimeout(() => {
+      isRiskBannerBlinking.value = false;
+    }, 15000);
+  }
 };
 
 const fetchLiveConversations = async () => {
@@ -263,6 +344,7 @@ const fetchLiveConversations = async () => {
     liveConversations.value = conversations.filter(conversation => {
       return ['open', 'pending', 'snoozed'].includes(conversation?.status);
     });
+    await updateRiskBanner();
   } catch (e) {
     liveConversations.value = [];
     useAlert(t('REPORT.DATA_FETCHING_FAILED'));
@@ -324,8 +406,10 @@ const setPause = async shouldPause => {
     const next = new Set(Array.isArray(currentLabels) ? currentLabels : []);
     if (shouldPause) {
       next.add(PAUSE_LABEL);
+      next.add(BOT_BLOCK_LABEL);
     } else {
       next.delete(PAUSE_LABEL);
+      next.delete(BOT_BLOCK_LABEL);
     }
 
     await ConversationLabelsAPI.updateLabels(id, Array.from(next));
@@ -338,7 +422,12 @@ const setPause = async shouldPause => {
 };
 
 onMounted(() => {
-  emitter.on('ai_control_panel:refresh_live_conversations', fetchLiveConversations);
+  emitter.on('ai_control_panel:refresh_live_conversations', async () => {
+    await fetchLiveConversations();
+    if (to.value && from.value) {
+      await Promise.all([fetchTrafficSummary(), fetchBotMetrics(), fetchLabelSummary()]);
+    }
+  });
   // Fetch happens after the first filter event
 });
 
@@ -355,10 +444,25 @@ onBeforeUnmount(() => {
     />
 
     <div class="flex flex-col gap-4 pb-6">
+      <div
+        v-if="isRiskBannerVisible"
+        class="rounded-xl outline outline-1 px-4 py-3"
+        :class="
+          isRiskBannerBlinking
+            ? 'bg-n-ruby-3 text-n-ruby-12 outline-n-ruby-4 animate-pulse'
+            : 'bg-n-ruby-3 text-n-ruby-12 outline-n-ruby-4'
+        "
+      >
+        <div class="text-sm font-medium">
+          {{ riskBannerText }}
+        </div>
+      </div>
+
       <ReportFilterSelector
         :show-agents-filter="false"
         :show-group-by-filter="false"
         :show-business-hours-switch="false"
+        @filterChange="onFilterChange"
         @filter-change="onFilterChange"
       />
 
@@ -446,6 +550,16 @@ onBeforeUnmount(() => {
               </router-link>
               <div class="text-xs text-n-slate-11 truncate mt-0.5">
                 {{ conversationPreview(conversation) || '--' }}
+              </div>
+
+              <div
+                v-if="conversationHandoverReasonLabels(conversation).length"
+                class="text-xs text-n-slate-11 truncate mt-1"
+              >
+                <span class="font-medium text-n-slate-12">Reason:</span>
+                <span>
+                  {{ conversationHandoverReasonLabels(conversation).join(', ') }}
+                </span>
               </div>
 
               <div
