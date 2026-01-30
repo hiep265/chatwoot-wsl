@@ -80,7 +80,7 @@ class V2::Reports::BotMetricsBuilder
   end
 
   def bot_messages
-    # Đếm tin nhắn bot từ chatbotlevan: dựa trên is_bot_generated='true' hoặc bot_provider='chatbotlevan'
+    # Đếm tin nhắn bot từ chatbotlevan: dựa trên is_bot_generated='true' (string) hoặc bot_provider='chatbotlevan'
     @bot_messages ||= account.messages.outgoing
                              .where(created_at: range)
                              .where(private: false)
