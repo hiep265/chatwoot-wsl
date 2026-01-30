@@ -8,12 +8,15 @@ class V2::Reports::BotMetricsBuilder
   end
 
   def metrics
-    {
+    payload = {
       conversation_count: bot_conversations.count,
       message_count: bot_messages.count,
       resolution_rate: bot_resolution_rate.to_i,
       handoff_rate: bot_handoff_rate.to_i
     }
+
+    payload[:debug] = debug_payload if debug?
+    payload
   end
 
   private
@@ -38,6 +41,48 @@ class V2::Reports::BotMetricsBuilder
                                "OR COALESCE(content_attributes ->> 'is_bot_generated', '') IN ('true', 't', '1')",
                                provider: 'chatbotlevan'
                              )
+  end
+
+  def debug?
+    ActiveModel::Type::Boolean.new.cast(params[:debug])
+  end
+
+  def debug_payload
+    base_scope = account.messages.outgoing.where(created_at: range)
+    public_scope = base_scope.where(private: false)
+
+    provider_scope = public_scope.where("COALESCE(content_attributes ->> 'bot_provider', '') = :provider", provider: 'chatbotlevan')
+    generated_scope = public_scope.where("COALESCE(content_attributes ->> 'is_bot_generated', '') IN ('true', 't', '1')")
+    combined_scope = public_scope.where(
+      "COALESCE(content_attributes ->> 'bot_provider', '') = :provider " \
+      "OR COALESCE(content_attributes ->> 'is_bot_generated', '') IN ('true', 't', '1')",
+      provider: 'chatbotlevan'
+    )
+
+    sample = public_scope.order(id: :desc).limit(5).select(:id, :inbox_id, :conversation_id, :private, :created_at, :content_attributes).map do |m|
+      {
+        id: m.id,
+        conversation_id: m.conversation_id,
+        inbox_id: m.inbox_id,
+        private: m.private,
+        created_at: m.created_at,
+        content_attributes: m.content_attributes
+      }
+    end
+
+    {
+      since: params[:since],
+      until: params[:until],
+      totals: {
+        outgoing_in_range: base_scope.count,
+        outgoing_public_in_range: public_scope.count,
+        outgoing_private_in_range: base_scope.where(private: true).count,
+        outgoing_public_bot_provider_chatbotlevan: provider_scope.count,
+        outgoing_public_is_bot_generated_truthy: generated_scope.count,
+        outgoing_public_combined_match: combined_scope.count
+      },
+      sample_outgoing_public_messages: sample
+    }
   end
 
   def bot_resolutions_count
