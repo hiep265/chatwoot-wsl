@@ -39,7 +39,14 @@ class V2::Reports::BotMetricsBuilder
       outgoing_public_in_range: base_scope.where(private: false).count,
       bot_provider_chatbotlevan: base_scope.where(private: false).where("COALESCE(content_attributes ->> 'bot_provider', '') = 'chatbotlevan'").count,
       sample_ids_108_111: account.messages.where(id: [108, 109, 110, 111]).select(:id, :conversation_id, :created_at, :content_attributes).map { |m| 
-        { id: m.id, conversation_id: m.conversation_id, created_at: m.created_at.to_s, content_attributes: m.content_attributes }
+        { 
+          id: m.id, 
+          conversation_id: m.conversation_id, 
+          created_at: m.created_at.to_s, 
+          content_attributes: m.content_attributes,
+          has_bot_provider: m.content_attributes.is_a?(Hash) && m.content_attributes['bot_provider'].present?,
+          bot_provider_value: m.content_attributes.is_a?(Hash) ? m.content_attributes['bot_provider'] : nil
+        }
       }
     }
   end
