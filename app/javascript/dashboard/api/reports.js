@@ -91,10 +91,10 @@ class ReportsAPI extends ApiClient {
     });
   }
 
-  getBotMetrics({ from, to, debug } = {}) {
-    const params = { since: from, until: to };
-    if (debug) params.debug = true;
-    return axios.get(`${this.url}/bot_metrics`, { params });
+  getBotMetrics({ from, to } = {}) {
+    return axios.get(`${this.url}/bot_metrics`, {
+      params: { since: from, until: to, debug: true },
+    });
   }
 
   getBotSummary({ from, to, groupBy, businessHours } = {}) {

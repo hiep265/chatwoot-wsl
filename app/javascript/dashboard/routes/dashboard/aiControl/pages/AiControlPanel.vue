@@ -350,35 +350,18 @@ const fetchBotSummary = async () => {
 const fetchBotMetrics = async () => {
   if (!to.value || !from.value) return;
 
-  // Gọi API với debug=true để nhận thông tin chi tiết
-  const req = { from: from.value, to: to.value, debug: true };
-  // eslint-disable-next-line no-console
-  console.log('[AiControlPanel] fetchBotMetrics request', req);
-
   try {
-    const response = await ReportsAPI.getBotMetrics(req);
+    const response = await ReportsAPI.getBotMetrics({ from: from.value, to: to.value });
     const data = response?.data || {};
+    botMessageCount.value = Number(data.message_count || 0).toLocaleString();
+    
+    // Debug: hiển thị message_count trong console
     // eslint-disable-next-line no-console
-    console.log('[AiControlPanel] fetchBotMetrics response.data', data);
-
-    // Log debug info chi tiết từ backend
-    if (data.debug) {
-      // eslint-disable-next-line no-console
-      console.log('[AiControlPanel] fetchBotMetrics DEBUG totals:', data.debug.totals);
-      // eslint-disable-next-line no-console
-      console.log('[AiControlPanel] fetchBotMetrics DEBUG sample messages:', data.debug.sample_outgoing_public_messages);
-    }
-
-    const raw = data.message_count;
-    const parsed = Number(raw || 0);
+    console.log('[BotMetrics] message_count:', data.message_count);
     // eslint-disable-next-line no-console
-    console.log('[AiControlPanel] fetchBotMetrics parsed', { raw, parsed, locale: parsed.toLocaleString() });
-
-    botMessageCount.value = parsed.toLocaleString();
+    console.log('[BotMetrics] debug info:', data.debug);
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.log('[AiControlPanel] fetchBotMetrics error', e);
-    throw e;
+    botMessageCount.value = '0';
   }
 };
 

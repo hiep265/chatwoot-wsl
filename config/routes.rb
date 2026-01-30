@@ -451,6 +451,7 @@ Rails.application.routes.draw do
               get :conversations_summary
               get :conversation_traffic
               get :bot_metrics
+              get :debug_bot_messages
             end
           end
           resource :year_in_review, only: [:show]

@@ -14,10 +14,35 @@ class V2::Reports::BotMetricsBuilder
       resolution_rate: bot_resolution_rate.to_i,
       handoff_rate: bot_handoff_rate.to_i
     }
+    
+    # Debug: thêm thông tin chi tiết khi gọi với debug=true
+    if debug_enabled?
+      payload[:debug] = debug_info
+    end
+    
     payload
   end
 
   private
+
+  def debug_enabled?
+    params[:debug] == 'true' || params[:debug] == true
+  end
+
+  def debug_info
+    base_scope = account.messages.outgoing.where(created_at: range)
+    
+    {
+      account_id: account.id,
+      time_range: { since: params[:since], until: params[:until] },
+      outgoing_in_range: base_scope.count,
+      outgoing_public_in_range: base_scope.where(private: false).count,
+      bot_provider_chatbotlevan: base_scope.where(private: false).where("COALESCE(content_attributes ->> 'bot_provider', '') = 'chatbotlevan'").count,
+      sample_ids_108_111: account.messages.where(id: [108, 109, 110, 111]).select(:id, :conversation_id, :created_at, :content_attributes).map { |m| 
+        { id: m.id, conversation_id: m.conversation_id, created_at: m.created_at.to_s, content_attributes: m.content_attributes }
+      }
+    }
+  end
 
   def bot_activated_inbox_ids
     @bot_activated_inbox_ids ||= account.inboxes.filter(&:active_bot?).map(&:id)

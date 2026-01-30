@@ -62,6 +62,23 @@ class Api::V2::Accounts::ReportsController < Api::V1::Accounts::BaseController
     render json: bot_metrics
   end
 
+  # Debug endpoint để kiểm tra tin nhắn bot
+  def debug_bot_messages
+    # Lấy tất cả messages có bot_provider = chatbotlevan trong 30 ngày qua
+    messages = Current.account.messages.outgoing
+                       .where('created_at > ?', 30.days.ago)
+                       .where("COALESCE(content_attributes ->> 'bot_provider', '') = 'chatbotlevan'")
+                       .select(:id, :conversation_id, :content, :created_at, :content_attributes)
+                       .order(created_at: :desc)
+                       .limit(10)
+
+    render json: {
+      total_count: Current.account.messages.outgoing.where("COALESCE(content_attributes ->> 'bot_provider', '') = 'chatbotlevan'").count,
+      recent_30d_count: messages.count,
+      messages: messages.map { |m| { id: m.id, conversation_id: m.conversation_id, content: m.content[0..50], created_at: m.created_at.to_s, content_attributes: m.content_attributes } }
+    }
+  end
+
   private
 
   def generate_csv(filename, template)
