@@ -88,27 +88,35 @@ class V2::Reports::BotMetricsBuilder
       provider: 'chatbotlevan'
     )
 
+    # Get sample with content_attributes - lấy mới nhất theo ID
     sample = public_scope.order(id: :desc).limit(5).select(:id, :inbox_id, :conversation_id, :private, :created_at, :content_attributes).map do |m|
       {
         id: m.id,
         conversation_id: m.conversation_id,
         inbox_id: m.inbox_id,
         private: m.private,
-        created_at: m.created_at,
+        created_at: m.created_at.to_i,
         content_attributes: m.content_attributes
       }
     end
 
+    # Check recent messages trong 24h qua (bất kể range)
+    recent_24h = account.messages.outgoing.where('created_at > ?', 24.hours.ago)
+    recent_bot_messages = recent_24h.where("COALESCE(content_attributes ->> 'bot_provider', '') = 'chatbotlevan'").count
+
     {
       since: params[:since],
       until: params[:until],
+      parsed_since: parse_date_time(params[:since])&.to_s,
+      parsed_until: parse_date_time(params[:until])&.to_s,
       totals: {
         outgoing_in_range: base_scope.count,
         outgoing_public_in_range: public_scope.count,
         outgoing_private_in_range: base_scope.where(private: true).count,
         outgoing_public_bot_provider_chatbotlevan: provider_scope.count,
         outgoing_public_is_bot_generated_truthy: generated_scope.count,
-        outgoing_public_combined_match: combined_scope.count
+        outgoing_public_combined_match: combined_scope.count,
+        recent_24h_bot_messages: recent_bot_messages
       },
       sample_outgoing_public_messages: sample
     }
