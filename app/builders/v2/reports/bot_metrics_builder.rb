@@ -32,6 +32,7 @@ class V2::Reports::BotMetricsBuilder
   def debug_info
     base_scope = account.messages.outgoing.where(created_at: range)
     base_public = base_scope.where(private: false)
+    is_bot_generated_json = { is_bot_generated: true }.to_json
     
     {
       account_id: account.id,
@@ -40,7 +41,7 @@ class V2::Reports::BotMetricsBuilder
       outgoing_public_in_range: base_public.count,
       outgoing_public_with_content_attributes: base_public.where.not(content_attributes: [nil, {}]).count,
       outgoing_public_with_bot_provider_key: base_public.where("content_attributes ->> 'bot_provider' IS NOT NULL").count,
-      outgoing_public_is_bot_generated_true: base_public.where("content_attributes::jsonb @> '{\\\"is_bot_generated\\\": true}'::jsonb").count,
+      outgoing_public_is_bot_generated_true: base_public.where("content_attributes::jsonb @> ?::jsonb", is_bot_generated_json).count,
       bot_provider_chatbotlevan: base_public.where("COALESCE(content_attributes ->> 'bot_provider', '') = 'chatbotlevan'").count,
       recent_outgoing_public_samples: base_public
         .order(id: :desc)
@@ -81,10 +82,16 @@ class V2::Reports::BotMetricsBuilder
 
   def bot_messages
     # Đếm tin nhắn bot từ chatbotlevan: dùng @> operator (JSON contains) hoạt động với cả JSON và JSONB
+    is_bot_generated_json = { is_bot_generated: true }.to_json
+    bot_provider_json = { bot_provider: 'chatbotlevan' }.to_json
     @bot_messages ||= account.messages.outgoing
                              .where(created_at: range)
                              .where(private: false)
-                             .where("content_attributes::jsonb @> '{\\\"is_bot_generated\\\": true}'::jsonb OR content_attributes::jsonb @> '{\\\"bot_provider\\\": \\\"chatbotlevan\\\"}'::jsonb")
+                             .where(
+                               "content_attributes::jsonb @> ?::jsonb OR content_attributes::jsonb @> ?::jsonb",
+                               is_bot_generated_json,
+                               bot_provider_json
+                             )
   end
 
   def bot_resolutions_count
