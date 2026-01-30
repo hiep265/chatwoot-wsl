@@ -39,7 +39,18 @@ class Messages::MessageBuilder
   # - Returns an empty hash if content is not present, if there's a parsing error, or if it's an unexpected type.
   def content_attributes
     params = ensure_indifferent_access(convert_to_hash(@params))
-    content_attributes = params.fetch(:content_attributes, {})
+
+    content_attributes = params.fetch(:content_attributes, nil)
+
+    if content_attributes.blank?
+      nested = params[:message]
+      if nested.present?
+        nested_params = ensure_indifferent_access(convert_to_hash(nested))
+        content_attributes = nested_params.fetch(:content_attributes, {})
+      else
+        content_attributes = {}
+      end
+    end
 
     return safe_parse_json(content_attributes) if content_attributes.is_a?(String)
     return content_attributes if content_attributes.is_a?(Hash)

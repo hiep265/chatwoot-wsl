@@ -31,13 +31,32 @@ class V2::Reports::BotMetricsBuilder
 
   def debug_info
     base_scope = account.messages.outgoing.where(created_at: range)
+    base_public = base_scope.where(private: false)
     
     {
       account_id: account.id,
       time_range: { since: params[:since], until: params[:until] },
       outgoing_in_range: base_scope.count,
-      outgoing_public_in_range: base_scope.where(private: false).count,
-      bot_provider_chatbotlevan: base_scope.where(private: false).where("COALESCE(content_attributes ->> 'bot_provider', '') = 'chatbotlevan'").count,
+      outgoing_public_in_range: base_public.count,
+      outgoing_public_with_content_attributes: base_public.where.not(content_attributes: [nil, {}]).count,
+      outgoing_public_with_bot_provider_key: base_public.where("content_attributes ? 'bot_provider'").count,
+      outgoing_public_is_bot_generated_true: base_public.where("content_attributes ->> 'is_bot_generated' = 'true'").count,
+      bot_provider_chatbotlevan: base_public.where("COALESCE(content_attributes ->> 'bot_provider', '') = 'chatbotlevan'").count,
+      recent_outgoing_public_samples: base_public
+        .order(id: :desc)
+        .limit(10)
+        .select(:id, :conversation_id, :created_at, :private, :sender_type, :content_attributes)
+        .map { |m|
+          {
+            id: m.id,
+            conversation_id: m.conversation_id,
+            created_at: m.created_at.to_s,
+            created_at_unix: m.created_at.to_i,
+            sender_type: m.sender_type,
+            private: m.private,
+            content_attributes: m.content_attributes
+          }
+        },
       sample_ids_108_111: account.messages.where(id: [108, 109, 110, 111]).select(:id, :conversation_id, :created_at, :content_attributes).map { |m| 
         { 
           id: m.id, 
