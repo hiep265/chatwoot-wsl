@@ -39,7 +39,7 @@ class V2::Reports::BotMetricsBuilder
       outgoing_in_range: base_scope.count,
       outgoing_public_in_range: base_public.count,
       outgoing_public_with_content_attributes: base_public.where.not(content_attributes: [nil, {}]).count,
-      outgoing_public_with_bot_provider_key: base_public.where("content_attributes::jsonb ? 'bot_provider'").count,
+      outgoing_public_with_bot_provider_key: base_public.where("content_attributes ? 'bot_provider'").count,
       outgoing_public_is_bot_generated_true: base_public.where("content_attributes ->> 'is_bot_generated' = 'true'").count,
       bot_provider_chatbotlevan: base_public.where("COALESCE(content_attributes ->> 'bot_provider', '') = 'chatbotlevan'").count,
       recent_outgoing_public_samples: base_public
@@ -80,11 +80,11 @@ class V2::Reports::BotMetricsBuilder
   end
 
   def bot_messages
-    # Đếm tin nhắn bot từ chatbotlevan
+    # Đếm tin nhắn bot từ chatbotlevan: dựa trên is_bot_generated='true' hoặc bot_provider='chatbotlevan'
     @bot_messages ||= account.messages.outgoing
                              .where(created_at: range)
                              .where(private: false)
-                             .where("COALESCE(content_attributes ->> 'bot_provider', '') = 'chatbotlevan'")
+                             .where("content_attributes ->> 'is_bot_generated' = 'true' OR content_attributes ->> 'bot_provider' = 'chatbotlevan'")
   end
 
   def bot_resolutions_count
