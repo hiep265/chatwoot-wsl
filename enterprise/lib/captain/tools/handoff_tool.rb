@@ -95,18 +95,20 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
   end
 
   def ensure_labels(conversation, lead:, urgent:, upset:, paused:)
+    # Chỉ dùng nhãn ai_handoff để đánh dấu chuyển nhân viên + dừng AI
     labels = ['ai_handoff']
     labels << 'ai_lead' if lead == true
     labels << 'ai_urgent' if urgent == true
     labels << 'ai_upset' if upset == true
-    labels << 'ai_paused' if paused == true
+    # Không dùng ai_paused riêng - ai_handoff đã bao gồm việc dừng AI
 
     labels = labels.uniq
 
     labels.each do |label_name|
       label = account_scoped(Label).find_or_create_by!(title: label_name)
 
-      if label_name.in?(%w[ai_lead ai_urgent ai_upset]) && !label.show_on_sidebar?
+      # Bật show_on_sidebar cho các nhãn quan trọng để dễ quản lý
+      if label_name.in?(%w[ai_handoff ai_lead ai_urgent ai_upset]) && !label.show_on_sidebar?
         label.update!(show_on_sidebar: true)
       end
     end

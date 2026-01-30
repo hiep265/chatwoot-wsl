@@ -142,7 +142,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
           expect(conversation.label_list).to include('ai_handoff')
           expect(conversation.label_list).to include('ai_lead')
           expect(conversation.label_list).to include('ai_urgent')
-          expect(conversation.label_list).to include('ai_paused')
+          # Không còn dùng ai_paused - chỉ dùng ai_handoff để đánh dấu
 
           expect(conversation.priority).to eq('urgent')
         end

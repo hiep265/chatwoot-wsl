@@ -29,7 +29,8 @@ module Enterprise::AgentBotListener
   def bot_paused_for_conversation?(conversation)
     return false if conversation.blank?
 
-    paused_label = conversation.label_list.include?('ai_paused')
+    # Sử dụng nhãn ai_handoff để đánh dấu bot đang dừng/tiếp quản ngay
+    paused_label = conversation.label_list.include?('ai_handoff')
     paused_attr = conversation.custom_attributes&.dig('captain', 'handoff', 'pause_bot')
 
     paused_label || paused_attr == true
@@ -51,7 +52,8 @@ module Enterprise::AgentBotListener
     captain_attrs['handoff'] = handoff_attrs
     custom_attrs['captain'] = captain_attrs
 
-    conversation.label_list.remove('ai_paused') if conversation.label_list.include?('ai_paused')
+    # Gỡ nhãn ai_handoff khi nhân viên trả lời (tắt tiếp quản ngay)
+    conversation.label_list.remove('ai_handoff') if conversation.label_list.include?('ai_handoff')
 
     conversation.custom_attributes = custom_attrs
     conversation.save!
