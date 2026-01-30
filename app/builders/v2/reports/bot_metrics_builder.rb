@@ -15,7 +15,11 @@ class V2::Reports::BotMetricsBuilder
       handoff_rate: bot_handoff_rate.to_i
     }
 
-    payload[:debug] = debug_payload if debug?
+    if debug? || env_debug?
+      debug = debug_payload
+      payload[:debug] = debug if debug?
+      log_debug(debug)
+    end
     payload
   end
 
@@ -45,6 +49,31 @@ class V2::Reports::BotMetricsBuilder
 
   def debug?
     ActiveModel::Type::Boolean.new.cast(params[:debug])
+  end
+
+  def env_debug?
+    ActiveModel::Type::Boolean.new.cast(ENV['CHATWOOT_BOT_METRICS_DEBUG'])
+  end
+
+  def log_debug(debug)
+    totals = debug[:totals] || {}
+    Rails.logger.info(
+      "[BotMetricsDebug] account_id=#{account.id} since=#{debug[:since]} until=#{debug[:until]} " \
+      "outgoing_in_range=#{totals[:outgoing_in_range]} outgoing_public_in_range=#{totals[:outgoing_public_in_range]} " \
+      "provider_chatbotlevan=#{totals[:outgoing_public_bot_provider_chatbotlevan]} is_bot_generated_truthy=#{totals[:outgoing_public_is_bot_generated_truthy]} " \
+      "combined_match=#{totals[:outgoing_public_combined_match]}"
+    )
+
+    sample = debug[:sample_outgoing_public_messages]
+    return unless sample.is_a?(Array) && sample.any?
+
+    sample.each do |m|
+      ca = m[:content_attributes].is_a?(Hash) ? m[:content_attributes] : {}
+      Rails.logger.info(
+        "[BotMetricsDebug] sample_message id=#{m[:id]} conversation_id=#{m[:conversation_id]} inbox_id=#{m[:inbox_id]} private=#{m[:private]} " \
+        "bot_provider=#{ca['bot_provider'] || ca[:bot_provider]} is_bot_generated=#{ca['is_bot_generated'] || ca[:is_bot_generated]}"
+      )
+    end
   end
 
   def debug_payload

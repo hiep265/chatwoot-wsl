@@ -350,10 +350,28 @@ const fetchBotSummary = async () => {
 const fetchBotMetrics = async () => {
   if (!to.value || !from.value) return;
 
-  const response = await ReportsAPI.getBotMetrics({ from: from.value, to: to.value });
-  const data = response?.data || {};
+  // Debug in browser console: message_count source and parsing
+  const req = { from: from.value, to: to.value };
+  // eslint-disable-next-line no-console
+  console.log('[AiControlPanel] fetchBotMetrics request', req);
 
-  botMessageCount.value = Number(data.message_count || 0).toLocaleString();
+  try {
+    const response = await ReportsAPI.getBotMetrics(req);
+    const data = response?.data || {};
+    // eslint-disable-next-line no-console
+    console.log('[AiControlPanel] fetchBotMetrics response.data', data);
+
+    const raw = data.message_count;
+    const parsed = Number(raw || 0);
+    // eslint-disable-next-line no-console
+    console.log('[AiControlPanel] fetchBotMetrics parsed', { raw, parsed, locale: parsed.toLocaleString() });
+
+    botMessageCount.value = parsed.toLocaleString();
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.log('[AiControlPanel] fetchBotMetrics error', e);
+    throw e;
+  }
 };
 
 const fetchLabelSummary = async () => {
