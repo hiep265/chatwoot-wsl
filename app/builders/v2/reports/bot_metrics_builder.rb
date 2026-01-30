@@ -43,9 +43,10 @@ class V2::Reports::BotMetricsBuilder
           id: m.id, 
           conversation_id: m.conversation_id, 
           created_at: m.created_at.to_s, 
+          created_at_unix: m.created_at.to_i,
+          in_range: range.include?(m.created_at),
           content_attributes: m.content_attributes,
-          has_bot_provider: m.content_attributes.is_a?(Hash) && m.content_attributes['bot_provider'].present?,
-          bot_provider_value: m.content_attributes.is_a?(Hash) ? m.content_attributes['bot_provider'] : nil
+          bot_provider_sql: m[:content_attributes] ? m[:content_attributes]['bot_provider'] : nil
         }
       }
     }
