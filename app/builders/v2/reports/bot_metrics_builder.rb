@@ -27,9 +27,17 @@ class V2::Reports::BotMetricsBuilder
   end
 
   def bot_messages
+    # Count outbound messages sent by automation/bots.
+    # We support both the built-in bot marker and external providers (e.g. chatbotlevan)
+    # that set content_attributes on outgoing messages.
     @bot_messages ||= account.messages.outgoing
                              .where(created_at: range)
-                             .where("content_attributes ->> 'is_bot_generated' = 'true'")
+                             .where(private: false)
+                             .where(
+                               "COALESCE(content_attributes ->> 'bot_provider', '') = :provider " \
+                               "OR COALESCE(content_attributes ->> 'is_bot_generated', '') IN ('true', 't', '1')",
+                               provider: 'chatbotlevan'
+                             )
   end
 
   def bot_resolutions_count

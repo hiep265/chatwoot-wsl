@@ -32,8 +32,8 @@ const labelSummary = ref([]);
 const liveConversations = ref([]);
 const isLiveConversationsLoading = ref(false);
 
-const PAUSE_LABEL = 'ai_paused';
-const BOT_BLOCK_LABEL = 'khongtraloibangai';
+// Chỉ dùng ai_handoff để đánh dấu cả chuyển nhân viên và dừng AI
+const HANDOFF_LABEL = 'ai_handoff';
 
 const takeoverLoadingMap = ref({});
 const isTakeoverAllLoading = ref(false);
@@ -110,17 +110,16 @@ const normalizeLabelSummary = summary => {
 };
 
 const trackedLabelNames = computed(() => {
+  // Chỉ theo dõi các nhãn liên quan (đã bỏ ai_paused và khongtraloibangai)
   return [
-    'ai_handoff',
-    'ai_lead',
-    'ai_lead_high',
-    'ai_lead_medium',
-    'ai_lead_low',
-    'ai_urgent',
-    'ai_upset',
-    'ai_paused',
-    'khongtraloibangai',
-    'intent_booking_confirmed',
+    'ai_handoff',          // Chuyển nhân viên (đồng thời là dừng AI)
+    'ai_lead',             // Khách tiềm năng
+    'ai_lead_high',        // Khách tiềm năng (tốt)
+    'ai_lead_medium',      // Khách tiềm năng (trung bình)
+    'ai_lead_low',         // Khách tiềm năng (kém)
+    'ai_urgent',           // Ưu tiên gấp
+    'ai_upset',            // Khách bực / tiêu cực
+    'intent_booking_confirmed',  // AI chốt lịch thành công
   ];
 });
 
@@ -137,15 +136,14 @@ const trackedLabelRows = computed(() => {
 const labelDisplayName = name => {
   const map = {
     intent_booking_confirmed: 'AI chốt lịch thành công',
-    ai_handoff: 'Chuyển nhân viên',
+    ai_handoff: 'Chuyển nhân viên',           // Đồng thời là dừng AI
     ai_upset: 'Khách bực / tiêu cực',
     ai_urgent: 'Ưu tiên gấp',
     ai_lead: 'Khách tiềm năng',
     ai_lead_high: 'Khách tiềm năng (tốt)',
     ai_lead_medium: 'Khách tiềm năng (trung bình)',
     ai_lead_low: 'Khách tiềm năng (kém)',
-    ai_paused: 'Đang dừng AI',
-    khongtraloibangai: 'Không trả lời bằng AI',
+    // Đã bỏ: ai_paused, khongtraloibangai (gộp vào ai_handoff)
   };
   return map[name] || name;
 };
@@ -160,8 +158,7 @@ const labelTone = name => {
     ai_lead_high: 'teal',
     ai_lead_medium: 'amber',
     ai_lead_low: 'ruby',
-    ai_paused: 'slate',
-    khongtraloibangai: 'slate',
+    // Đã bỏ: ai_paused, khongtraloibangai (gộp vào ai_handoff)
   };
   return map[name] || 'slate';
 };
@@ -200,8 +197,9 @@ const conversationRoute = conversationId => {
 };
 
 const isConversationInHumanMode = conversation => {
+  // Chỉ dùng ai_handoff để đánh dấu chế độ human
   const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
-  return labels.includes(PAUSE_LABEL) || labels.includes(BOT_BLOCK_LABEL);
+  return labels.includes(HANDOFF_LABEL);
 };
 
 const isConversationPaused = conversation => {
@@ -242,9 +240,10 @@ const conversationPreview = conversation => {
 
 const conversationAIMetadataLabels = conversation => {
   const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
+  // Lọc nhãn tracked và bỏ qua ai_handoff (đã hiển thị riêng)
   return labels
     .filter(label => trackedLabelNames.value.includes(label))
-    .filter(label => ![PAUSE_LABEL, BOT_BLOCK_LABEL].includes(label))
+    .filter(label => label !== HANDOFF_LABEL)
     .slice(0, 5);
 };
 
@@ -476,11 +475,11 @@ const setConversationPause = async (conversationId, shouldPause) => {
 
     const next = new Set(Array.isArray(currentLabels) ? currentLabels : []);
     if (shouldPause) {
-      next.add(PAUSE_LABEL);
-      next.add(BOT_BLOCK_LABEL);
+      // Chỉ dùng ai_handoff để đánh dấu tiếp quản ngay
+      next.add(HANDOFF_LABEL);
     } else {
-      next.delete(PAUSE_LABEL);
-      next.delete(BOT_BLOCK_LABEL);
+      // Tắt tiếp quản ngay = gỡ ai_handoff
+      next.delete(HANDOFF_LABEL);
     }
 
     await ConversationLabelsAPI.updateLabels(id, Array.from(next));
