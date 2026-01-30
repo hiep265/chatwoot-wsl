@@ -38,7 +38,7 @@ class Messages::MessageBuilder
   # - Attempts to parse a JSON string if content is a string.
   # - Returns an empty hash if content is not present, if there's a parsing error, or if it's an unexpected type.
   def content_attributes
-    params = convert_to_hash(@params)
+    params = ensure_indifferent_access(convert_to_hash(@params))
     content_attributes = params.fetch(:content_attributes, {})
 
     return safe_parse_json(content_attributes) if content_attributes.is_a?(String)
