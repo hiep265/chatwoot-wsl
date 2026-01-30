@@ -7,9 +7,14 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
 
   def create
     user = Current.user || @resource
+    # Debug: log params để xem content_attributes có được gửi từ chatbotlevan không
+    Rails.logger.info("[MessagesController#create] account_id=#{Current.account.id} conversation_id=#{@conversation.id} params_keys=#{params.keys} content_attributes=#{params[:content_attributes]&.inspect}")
     mb = Messages::MessageBuilder.new(user, @conversation, params)
     @message = mb.perform
+    # Debug: log content_attributes sau khi lưu
+    Rails.logger.info("[MessagesController#create] message_id=#{@message.id} saved_content_attributes=#{@message.content_attributes&.inspect}")
   rescue StandardError => e
+    Rails.logger.error("[MessagesController#create] error=#{e.class} #{e.message}")
     render_could_not_create_error(e.message)
   end
 
@@ -65,7 +70,8 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
   end
 
   def permitted_params
-    params.permit(:id, :target_language, :status, :external_error)
+    # Permit content_attributes để bot providers (e.g. chatbotlevan) có thể gửi metadata
+    params.permit(:id, :target_language, :status, :external_error, content_attributes: {})
   end
 
   def already_translated_content_available?
