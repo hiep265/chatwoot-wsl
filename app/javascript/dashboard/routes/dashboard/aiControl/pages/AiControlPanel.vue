@@ -350,8 +350,8 @@ const fetchBotSummary = async () => {
 const fetchBotMetrics = async () => {
   if (!to.value || !from.value) return;
 
-  // Debug in browser console: message_count source and parsing
-  const req = { from: from.value, to: to.value };
+  // Gọi API với debug=true để nhận thông tin chi tiết
+  const req = { from: from.value, to: to.value, debug: true };
   // eslint-disable-next-line no-console
   console.log('[AiControlPanel] fetchBotMetrics request', req);
 
@@ -360,6 +360,14 @@ const fetchBotMetrics = async () => {
     const data = response?.data || {};
     // eslint-disable-next-line no-console
     console.log('[AiControlPanel] fetchBotMetrics response.data', data);
+
+    // Log debug info chi tiết từ backend
+    if (data.debug) {
+      // eslint-disable-next-line no-console
+      console.log('[AiControlPanel] fetchBotMetrics DEBUG totals:', data.debug.totals);
+      // eslint-disable-next-line no-console
+      console.log('[AiControlPanel] fetchBotMetrics DEBUG sample messages:', data.debug.sample_outgoing_public_messages);
+    }
 
     const raw = data.message_count;
     const parsed = Number(raw || 0);
