@@ -196,6 +196,12 @@ Rails.application.routes.draw do
               resources :contact_inboxes, only: [:create]
               resources :labels, only: [:create, :index]
               resources :notes
+              resources :memories, only: [:index, :create, :destroy] do
+                collection do
+                  post :search
+                  get :stats
+                end
+              end
               post :call, on: :member, to: 'calls#create' if ChatwootApp.enterprise?
             end
           end
