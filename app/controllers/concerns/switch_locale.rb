@@ -54,13 +54,17 @@ module SwitchLocale
     # Ensure locale won't bleed into other requests
     # https://guides.rubyonrails.org/i18n.html#managing-the-locale-across-requests
     I18n.with_locale(safe_locale, &)
+  rescue I18n::InvalidLocale, NoMethodError
+    I18n.with_locale(I18n.default_locale.to_s, &)
   end
 
   def validate_and_get_locale(locale)
+    locale = locale.first if locale.is_a?(Array)
+    locale = locale.to_s
     return I18n.default_locale.to_s if locale.blank?
 
     available_locales = I18n.available_locales.map(&:to_s)
-    locale_without_variant = locale.split('_')[0]
+    locale_without_variant = locale.split(/[_-]/)[0]
 
     if available_locales.include?(locale)
       locale
