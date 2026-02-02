@@ -204,14 +204,20 @@ class Contact < ApplicationRecord
 
   def phone_number_format
     return if phone_number.blank?
-
-    self.phone_number = phone_number_was unless phone_number.match?(/\+[1-9]\d{1,14}\z/)
+    # Only revert if the new format is invalid AND was changed
+    # Allow API updates with valid format
+    if phone_number_changed? && !phone_number.match?(/\+[1-9]\d{1,14}\z/)
+      self.phone_number = phone_number_was
+    end
   end
 
   def email_format
     return if email.blank?
-
-    self.email = email_was unless email.match(Devise.email_regexp)
+    # Only revert if the new format is invalid AND was changed
+    # Allow API updates with valid format
+    if email_changed? && !email.match(Devise.email_regexp)
+      self.email = email_was
+    end
   end
 
   def prepare_contact_attributes

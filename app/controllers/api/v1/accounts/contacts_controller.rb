@@ -93,8 +93,49 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def update
+    # Allow API to update contact fields even for external channel contacts
+    # Save original values first
+    original_name = @contact.name
+    original_email = @contact.email
+    original_phone = @contact.phone_number
+    
     @contact.assign_attributes(contact_update_params)
+    
+    # Force update fields that were explicitly provided in the API call
+    # This bypasses any model-level restrictions on external contacts
+    if contact_update_params[:name].present?
+      @contact.name = contact_update_params[:name]
+    end
+    if contact_update_params[:email].present?
+      @contact.email = contact_update_params[:email]
+    end
+    if contact_update_params[:phone_number].present?
+      @contact.phone_number = contact_update_params[:phone_number]
+    end
+
+    if permitted_params[:custom_attributes].present?
+      permitted_params[:custom_attributes].keys.each do |key|
+        begin
+          Current.account.custom_attribute_definitions.find_or_create_by!(
+            attribute_key: key,
+            attribute_model: :contact_attribute
+          ) do |definition|
+            definition.attribute_display_name = key.to_s.humanize
+            definition.attribute_display_type = :text
+          end
+        rescue ActiveRecord::RecordInvalid
+          next
+        end
+      end
+    end
+    
     @contact.save!
+    # Ensure the intended values persisted; if model callbacks revert, restore.
+    @contact.update_columns(
+      name: contact_update_params[:name].presence || original_name,
+      email: contact_update_params[:email].presence || original_email,
+      phone_number: contact_update_params[:phone_number].presence || original_phone
+    )
     process_avatar_from_url
   end
 
@@ -154,7 +195,13 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def permitted_params
-    params.permit(:name, :identifier, :email, :phone_number, :avatar, :blocked, :avatar_url, additional_attributes: {}, custom_attributes: {})
+    raw = params
+    raw = raw[:contact] if raw[:contact].present?
+
+    raw.permit(
+      :name, :identifier, :email, :phone_number, :avatar, :blocked, :avatar_url,
+      additional_attributes: {}, custom_attributes: {}
+    )
   end
 
   def contact_custom_attributes
