@@ -56,6 +56,7 @@ const backButtonUrl = computed(() => {
     teamId,
     conversationType: conversationTypeMap[name],
     customViewId,
+    routeName: name,
   });
 });
 

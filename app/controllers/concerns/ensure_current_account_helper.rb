@@ -8,12 +8,18 @@ module EnsureCurrentAccountHelper
 
   def ensure_current_account
     account = Account.find(params[:account_id])
+    Rails.logger.info("[EnsureCurrentAccountHelper#ensure_current_account] account_id=#{account.id}, account_active=#{account.active?}")
     render_unauthorized('Account is suspended') and return unless account.active?
 
+    Rails.logger.info("[EnsureCurrentAccountHelper#ensure_current_account] current_user=#{Current.user&.class&.name}, @resource=#{@resource&.class&.name}")
     if current_user
+      Rails.logger.info("[EnsureCurrentAccountHelper#ensure_current_account] Checking account_accessible_for_user")
       account_accessible_for_user?(account)
     elsif @resource.is_a?(AgentBot)
+      Rails.logger.info("[EnsureCurrentAccountHelper#ensure_current_account] Checking account_accessible_for_bot")
       account_accessible_for_bot?(account)
+    else
+      Rails.logger.info("[EnsureCurrentAccountHelper#ensure_current_account] No current_user or AgentBot, resource_type=#{@resource&.class&.name}")
     end
     account
   end

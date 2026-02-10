@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { getLastMessage } from 'dashboard/helper/conversationHelper';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
@@ -45,6 +45,7 @@ const emit = defineEmits([
 ]);
 
 const router = useRouter();
+const route = useRoute();
 const store = useStore();
 
 const hovered = ref(false);
@@ -58,6 +59,14 @@ const currentChat = useMapGetter('getSelectedChat');
 const inboxesList = useMapGetter('inboxes/getInboxes');
 const activeInbox = useMapGetter('getSelectedInbox');
 const accountId = useMapGetter('getCurrentAccountId');
+const AI_CONTROL_ROUTE_NAMES = [
+  'ai_control_panel',
+  'ai_control_panel_conversation',
+];
+const HANDOFF_LABEL = 'ai_handoff';
+const LABEL_ALIASES = {
+  fai_handoff: HANDOFF_LABEL,
+};
 
 const chatMetadata = computed(() => props.chat.meta || {});
 
@@ -124,6 +133,72 @@ const messagePreviewClass = computed(() => {
   ];
 });
 
+const isAiControlMode = computed(() => {
+  return AI_CONTROL_ROUTE_NAMES.includes(String(route.name || ''));
+});
+
+const normalizeLabelKey = label => {
+  const key = String(label || '').toLowerCase();
+  return LABEL_ALIASES[key] || key;
+};
+
+const normalizedConversationLabels = computed(() => {
+  const labels = Array.isArray(props.chat?.labels) ? props.chat.labels : [];
+  return labels.map(label => normalizeLabelKey(label));
+});
+
+const isAiHumanMode = computed(() => {
+  return normalizedConversationLabels.value.includes(HANDOFF_LABEL);
+});
+
+const isAiRiskConversation = computed(() => {
+  const labels = normalizedConversationLabels.value;
+  return labels.includes(HANDOFF_LABEL) ||
+    labels.includes('ai_upset') ||
+    labels.includes('ai_urgent');
+});
+
+const sentimentType = computed(() => {
+  const labels = normalizedConversationLabels.value;
+  if (labels.includes('ai_upset')) return 'negative';
+
+  const message = lastMessageInChat.value || {};
+  const aiMetadata = message?.content_attributes?.ai_metadata;
+  const metaSentiment = String(aiMetadata?.sentiment_score || '').toLowerCase();
+  if (metaSentiment === 'negative') return 'negative';
+  if (metaSentiment === 'positive') return 'positive';
+  if (metaSentiment === 'neutral') return 'neutral';
+
+  const sentiment = message?.sentiment;
+  if (!sentiment || typeof sentiment !== 'object') return 'unknown';
+
+  const label = String(
+    sentiment.label || sentiment.sentiment || sentiment.polarity || ''
+  ).toLowerCase();
+  if (label.includes('neg')) return 'negative';
+  if (label.includes('pos')) return 'positive';
+  if (label.includes('neu')) return 'neutral';
+
+  const score = sentiment.score ?? sentiment.compound ?? sentiment.polarity_score;
+  if (typeof score === 'number') {
+    if (score > 0.2) return 'positive';
+    if (score < -0.2) return 'negative';
+    return 'neutral';
+  }
+
+  return 'unknown';
+});
+
+const aiSentimentEmoji = computed(() => {
+  const map = {
+    positive: '🙂',
+    neutral: '😐',
+    negative: '🙁',
+    unknown: '—',
+  };
+  return map[sentimentType.value] || map.unknown;
+});
+
 const conversationPath = computed(() => {
   return frontendURL(
     conversationUrl({
@@ -134,6 +209,7 @@ const conversationPath = computed(() => {
       teamId: props.teamId,
       conversationType: props.conversationType,
       foldersId: props.foldersId,
+      routeName: route.name,
     })
   );
 });
@@ -241,6 +317,10 @@ const deleteConversation = () => {
       'bg-n-slate-2 dark:bg-n-slate-3': selected,
       'px-0': compact,
       'px-3': !compact,
+      'ltr:border-l-4 rtl:border-r-4 ltr:border-l-n-ruby-9 rtl:border-r-n-ruby-9':
+        isAiControlMode && isAiRiskConversation,
+      'ltr:border-l-4 rtl:border-r-4 ltr:border-l-transparent rtl:border-r-transparent':
+        isAiControlMode && !isAiRiskConversation,
     }"
     @click="onCardClick"
     @contextmenu="openContextMenu($event)"
@@ -312,6 +392,19 @@ const deleteConversation = () => {
       >
         {{ currentContact.name }}
       </h4>
+      <div v-if="isAiControlMode" class="flex items-center gap-2 my-0.5 mx-2">
+        <span class="text-sm leading-4">{{ aiSentimentEmoji }}</span>
+        <span
+          class="text-xxs rounded-full outline outline-1 px-2 py-0.5 font-medium"
+          :class="
+            isAiHumanMode
+              ? 'bg-n-amber-3 text-n-slate-12 outline-n-amber-6'
+              : 'bg-n-teal-3 text-n-teal-12 outline-n-teal-5'
+          "
+        >
+          {{ isAiHumanMode ? 'Nhân viên' : 'AI' }}
+        </span>
+      </div>
       <VoiceCallStatus
         v-if="voiceCallData.status"
         key="voice-status-row"

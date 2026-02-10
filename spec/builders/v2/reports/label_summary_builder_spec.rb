@@ -78,6 +78,43 @@ RSpec.describe V2::Reports::LabelSummaryBuilder do
       end
     end
 
+    context 'when conversations have labels without label records' do
+      let(:business_hours) { false }
+      let(:account_without_labels) { create(:account) }
+      let(:builder_without_labels) { described_class.new(account: account_without_labels, params: params) }
+
+      before do
+        travel_to(Time.zone.today) do
+          user = create(:user, account: account_without_labels)
+          inbox = create(:inbox, account: account_without_labels)
+          create(:inbox_member, user: user, inbox: inbox)
+
+          gravatar_url = 'https://www.gravatar.com'
+          stub_request(:get, /#{gravatar_url}.*/).to_return(status: 404)
+
+          perform_enqueued_jobs do
+            conversation = create(:conversation, account: account_without_labels,
+                                                 inbox: inbox, assignee: user,
+                                                 created_at: Time.zone.today)
+            conversation.update_labels('ai_handoff')
+            conversation.label_list
+            conversation.save!
+          end
+        end
+      end
+
+      it 'includes observed labels even when labels table has no record' do
+        report = builder_without_labels.build
+
+        expect(report.length).to eq(1)
+        expect(report.first).to include(
+          id: nil,
+          name: 'ai_handoff',
+          conversations_count: 1
+        )
+      end
+    end
+
     context 'when there are labeled conversations with metrics' do
       before do
         travel_to(Time.zone.today) do

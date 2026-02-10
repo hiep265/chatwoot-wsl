@@ -13,11 +13,14 @@ class V2::Reports::LabelSummaryBuilder < V2::Reports::BaseSummaryBuilder
   # rubocop:enable Lint/MissingSuper
 
   def build
-    labels = account.labels.to_a
-    return [] if labels.empty?
-
     report_data = collect_report_data
-    labels.map { |label| build_label_report(label, report_data) }
+    label_ids_by_name = account.labels.pluck(:title, :id).to_h
+    label_names = reportable_label_names(report_data, label_ids_by_name.keys)
+    return [] if label_names.empty?
+
+    label_names.map do |label_name|
+      build_label_report(label_name, label_ids_by_name[label_name], report_data)
+    end
   end
 
   private
@@ -35,16 +38,21 @@ class V2::Reports::LabelSummaryBuilder < V2::Reports::BaseSummaryBuilder
     }
   end
 
-  def build_label_report(label, report_data)
+  def build_label_report(label_name, label_id, report_data)
     {
-      id: label.id,
-      name: label.title,
-      conversations_count: report_data[:conversation_counts][label.title] || 0,
-      avg_resolution_time: report_data[:resolution_metrics][label.title] || 0,
-      avg_first_response_time: report_data[:first_response_metrics][label.title] || 0,
-      avg_reply_time: report_data[:reply_metrics][label.title] || 0,
-      resolved_conversations_count: report_data[:resolved_counts][label.title] || 0
+      id: label_id,
+      name: label_name,
+      conversations_count: report_data[:conversation_counts][label_name] || 0,
+      avg_resolution_time: report_data[:resolution_metrics][label_name] || 0,
+      avg_first_response_time: report_data[:first_response_metrics][label_name] || 0,
+      avg_reply_time: report_data[:reply_metrics][label_name] || 0,
+      resolved_conversations_count: report_data[:resolved_counts][label_name] || 0
     }
+  end
+
+  def reportable_label_names(report_data, label_titles)
+    observed_label_names = report_data.values.flat_map(&:keys)
+    (Array(label_titles) + observed_label_names).uniq.sort
   end
 
   def use_business_hours?

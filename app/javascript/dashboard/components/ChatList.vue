@@ -86,13 +86,24 @@ const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
 const store = useStore();
+const AI_CONTROL_ROUTE_NAMES = [
+  'ai_control_panel',
+  'ai_control_panel_conversation',
+];
 
 const conversationListRef = ref(null);
 const conversationDynamicScroller = ref(null);
 
 provide('contextMenuElementTarget', conversationDynamicScroller);
 
-const activeAssigneeTab = ref(wootConstants.ASSIGNEE_TYPE.ME);
+const isAiControlConversationMode = computed(() => {
+  return AI_CONTROL_ROUTE_NAMES.includes(String(route.name || ''));
+});
+const activeAssigneeTab = ref(
+  isAiControlConversationMode.value
+    ? wootConstants.ASSIGNEE_TYPE.ALL
+    : wootConstants.ASSIGNEE_TYPE.ME
+);
 const activeStatus = ref(wootConstants.STATUS_TYPE.OPEN);
 const activeSortBy = ref(wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC);
 const showAdvancedFilters = ref(false);
@@ -144,6 +155,16 @@ const {
   onAssignTeamsForBulk,
   onUpdateConversations,
 } = useBulkActions();
+
+watch(
+  isAiControlConversationMode,
+  isAiMode => {
+    if (isAiMode) {
+      activeAssigneeTab.value = wootConstants.ASSIGNEE_TYPE.ALL;
+    }
+  },
+  { immediate: true }
+);
 
 const {
   initializeStatusAndAssigneeFilterToModal,
@@ -289,6 +310,9 @@ const activeTeam = computed(() => {
 });
 
 const pageTitle = computed(() => {
+  if (isAiControlConversationMode.value) {
+    return t('CHAT_LIST.ASSIGNEE_TYPE_TABS.all');
+  }
   if (hasAppliedFilters.value) {
     return t('CHAT_LIST.TAB_HEADING');
   }
@@ -612,6 +636,7 @@ function handleScroll() {
 }
 
 function updateAssigneeTab(selectedTab) {
+  if (isAiControlConversationMode.value) return;
   if (activeAssigneeTab.value !== selectedTab) {
     resetBulkActions();
     emitter.emit('clearSearchInput');
@@ -669,6 +694,7 @@ function redirectToConversationList() {
       inboxId,
       label,
       teamId,
+      routeName: name,
     })
   );
 }
@@ -886,7 +912,7 @@ watch(conversationFilters, (newVal, oldVal) => {
     />
 
     <ChatTypeTabs
-      v-if="!hasAppliedFiltersOrActiveFolders"
+      v-if="!hasAppliedFiltersOrActiveFolders && !isAiControlConversationMode"
       :items="assigneeTabItems"
       :active-tab="activeAssigneeTab"
       is-compact

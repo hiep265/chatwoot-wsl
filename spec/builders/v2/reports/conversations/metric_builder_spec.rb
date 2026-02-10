@@ -19,6 +19,7 @@ RSpec.describe V2::Reports::Conversations::MetricBuilder, type: :model do
       expect(summary).to eq(
         {
           conversations_count: 42,
+          incoming_conversations_count: 42,
           incoming_messages_count: 42,
           outgoing_messages_count: 42,
           avg_first_response_time: 42,

@@ -90,6 +90,7 @@ export default {
           conversationUrl({
             id: this.conversationId,
             accountId: this.currentAccountId,
+            routeName: this.$route?.name,
           })
         );
       await copyTextToClipboard(

@@ -385,6 +385,7 @@ const menuItems = computed(() => {
           name: 'AI Control Panel',
           label: t('SIDEBAR.AI_CONTROL_PANEL'),
           to: accountScopedRoute('ai_control_panel'),
+          activeOn: ['ai_control_panel', 'ai_control_panel_conversation'],
         },
         {
           name: 'Report Conversation',

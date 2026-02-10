@@ -29,6 +29,15 @@ class V2::Reports::Timeseries::CountReportBuilder < V2::Reports::Timeseries::Bas
     scope.conversations.where(account_id: account.id, created_at: range)
   end
 
+  def scope_for_incoming_conversations_count
+    scope.messages
+         .where(account_id: account.id, created_at: range)
+         .incoming
+         .unscope(:order)
+         .select(:conversation_id)
+         .distinct
+  end
+
   def scope_for_incoming_messages_count
     scope.messages.where(account_id: account.id, created_at: range).incoming.unscope(:order)
   end

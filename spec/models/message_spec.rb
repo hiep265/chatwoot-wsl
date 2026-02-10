@@ -271,6 +271,36 @@ RSpec.describe Message do
     end
   end
 
+  describe '#clear_handoff_labels_on_incoming_contact_message' do
+    let(:conversation) { create(:conversation) }
+
+    it 'removes handoff labels after an incoming contact message' do
+      conversation.update!(label_list: %w[ai_handoff fai_handoff ai_lead])
+
+      create(:message, conversation: conversation, message_type: :incoming, sender: conversation.contact)
+
+      expect(conversation.reload.label_list).to match_array(['ai_lead'])
+    end
+
+    it 'does not remove handoff label for outgoing human messages' do
+      conversation.update!(label_list: %w[ai_handoff ai_lead])
+      agent = create(:user, account: conversation.account)
+
+      create(:message, conversation: conversation, message_type: :outgoing, sender: agent)
+
+      expect(conversation.reload.label_list).to include('ai_handoff')
+    end
+
+    it 'does not remove handoff label when incoming sender is not a contact' do
+      conversation.update!(label_list: %w[ai_handoff ai_lead])
+      agent = create(:user, account: conversation.account)
+
+      create(:message, conversation: conversation, message_type: :incoming, sender: agent)
+
+      expect(conversation.reload.label_list).to include('ai_handoff')
+    end
+  end
+
   describe '#waiting since' do
     let(:conversation) { create(:conversation) }
     let(:agent) { create(:user, account: conversation.account) }

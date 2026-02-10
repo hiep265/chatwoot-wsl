@@ -79,7 +79,13 @@ class V2::Reports::BotMetricsBuilder
   end
 
   def bot_conversations
-    @bot_conversations ||= account.conversations.where(inbox_id: bot_activated_inbox_ids).where(created_at: range)
+    @bot_conversations ||= begin
+      scope = account.conversations.where(inbox_id: bot_activated_inbox_ids)
+      scope
+        .where(id: bot_messages.select(:conversation_id))
+        .or(scope.where(id: bot_reporting_events.select(:conversation_id)))
+        .distinct
+    end
   end
 
   def bot_messages
@@ -100,6 +106,14 @@ class V2::Reports::BotMetricsBuilder
   def bot_handoffs_count
     account.reporting_events.joins(:conversation).select(:conversation_id).where(account_id: account.id, name: :conversation_bot_handoff,
                                                                                  created_at: range).distinct.count
+  end
+
+  def bot_reporting_events
+    account.reporting_events.where(
+      account_id: account.id,
+      name: %i[conversation_bot_resolved conversation_bot_handoff],
+      created_at: range
+    )
   end
 
   def bot_resolution_rate

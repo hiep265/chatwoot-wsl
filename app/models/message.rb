@@ -44,6 +44,7 @@ class Message < ApplicationRecord
   include MessageFilterHelpers
   include Liquidable
   NUMBER_OF_PERMITTED_ATTACHMENTS = 15
+  AUTO_CLEAR_HANDOFF_LABELS = %w[ai_handoff fai_handoff].freeze
 
   TEMPLATE_PARAMS_SCHEMA = {
     'type': 'object',
@@ -310,11 +311,25 @@ class Message < ApplicationRecord
   def execute_after_create_commit_callbacks
     # rails issue with order of active record callbacks being executed https://github.com/rails/rails/issues/20911
     reopen_conversation
+    clear_handoff_labels_on_incoming_contact_message
     set_conversation_activity
     dispatch_create_events
     send_reply
     execute_message_template_hooks
     update_contact_activity
+  end
+
+  def clear_handoff_labels_on_incoming_contact_message
+    return unless incoming?
+    return unless sender.instance_of?(Contact)
+
+    current_labels = conversation.label_list.map(&:to_s)
+    next_labels = current_labels.reject do |label|
+      AUTO_CLEAR_HANDOFF_LABELS.include?(label.to_s.downcase)
+    end
+    return if next_labels.length == current_labels.length
+
+    conversation.update!(label_list: next_labels)
   end
 
   def update_contact_activity

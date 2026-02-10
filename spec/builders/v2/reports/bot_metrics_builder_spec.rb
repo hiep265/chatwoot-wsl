@@ -31,6 +31,25 @@ RSpec.describe V2::Reports::BotMetricsBuilder do
         expect(metrics[:resolution_rate]).to eq(50)
         expect(metrics[:handoff_rate]).to eq(100)
       end
+
+      it 'counts bot activity on older conversations inside the selected range' do
+        old_conversation = create(
+          :conversation,
+          account: inbox.account,
+          inbox: inbox,
+          created_at: 40.days.ago
+        )
+        create(
+          :reporting_event,
+          account_id: inbox.account.id,
+          name: 'conversation_bot_handoff',
+          conversation_id: old_conversation.id,
+          created_at: 2.days.ago
+        )
+
+        metrics = bot_metrics_builder.metrics
+        expect(metrics[:conversation_count]).to eq(3)
+      end
     end
 
     context 'with missing params' do

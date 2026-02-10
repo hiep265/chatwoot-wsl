@@ -40,6 +40,15 @@ describe('#URL Helpers', () => {
         '/app/accounts/1/custom_view/1'
       );
     });
+
+    it('should return ai control conversation list url in ai control route', () => {
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          routeName: 'ai_control_panel_conversation',
+        })
+      ).toBe('/app/accounts/1/ai-control/conversations');
+    });
   });
   describe('conversationUrl', () => {
     it('should return direct conversation URL if activeInbox is nil', () => {
@@ -61,6 +70,16 @@ describe('#URL Helpers', () => {
       expect(conversationUrl({ accountId: 1, teamId: 1, id: 1 })).toBe(
         'accounts/1/team/1/conversations/1'
       );
+    });
+
+    it('should return ai control conversation URL in ai control route', () => {
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 1,
+          routeName: 'ai_control_panel',
+        })
+      ).toBe('accounts/1/ai-control/conversations/1');
     });
   });
 

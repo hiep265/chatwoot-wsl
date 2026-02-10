@@ -28,9 +28,13 @@ module AccessTokenAuthHelper
   end
 
   def validate_bot_access_token!
+    Rails.logger.info("[AccessTokenAuthHelper#validate_bot_access_token!] Current.user_type=#{Current.user&.class&.name}")
     return if Current.user.is_a?(User)
-    return if agent_bot_accessible?
+    accessible = agent_bot_accessible?
+    Rails.logger.info("[AccessTokenAuthHelper#validate_bot_access_token!] agent_bot_accessible=#{accessible}, controller=#{params[:controller]}, action=#{params[:action]}")
+    return if accessible
 
+    Rails.logger.error("[AccessTokenAuthHelper#validate_bot_access_token!] Access denied - endpoint not authorized for bots")
     render_unauthorized('Access to this endpoint is not authorized for bots')
   end
 

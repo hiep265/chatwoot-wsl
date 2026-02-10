@@ -9,6 +9,7 @@ import InboxConversationAPI from 'dashboard/api/inbox/conversation';
 
 import ReportHeader from '../../settings/reports/components/ReportHeader.vue';
 import ReportFilterSelector from '../../settings/reports/components/FilterSelector.vue';
+import ConversationView from '../../conversation/ConversationView.vue';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 
@@ -23,8 +24,7 @@ const to = ref(0);
 const activeKpiTab = ref('traffic');
 
 const trafficConversationCount = ref(0);
-const aiResolvedConversationCount = ref(0);
-const aiHandoffConversationCount = ref(0);
+const botConversationCount = ref(0);
 const botMessageCount = ref('0');
 
 const labelSummary = ref([]);
@@ -34,8 +34,15 @@ const isLiveConversationsLoading = ref(false);
 
 // Chỉ dùng ai_handoff để đánh dấu cả chuyển nhân viên và dừng AI
 const HANDOFF_LABEL = 'ai_handoff';
+const LABEL_ALIASES = {
+  fai_handoff: HANDOFF_LABEL,
+};
 
-const takeoverLoadingMap = ref({});
+const normalizeLabelKey = label => {
+  const key = String(label || '').toLowerCase();
+  return LABEL_ALIASES[key] || key;
+};
+
 const isTakeoverAllLoading = ref(false);
 
 const riskConversationIds = ref(new Set());
@@ -43,25 +50,45 @@ const isRiskBannerVisible = ref(false);
 const isRiskBannerBlinking = ref(false);
 const riskBannerText = ref('');
 const riskAudio = ref(null);
+const aiControlConversationId = computed(() => route.params.conversation_id || 0);
 
 const formatCount = value => {
   return Number(value || 0).toLocaleString();
 };
 
-const trafficConversationCountText = computed(() => {
-  return formatCount(trafficConversationCount.value);
+const labelOverviewTotal = computed(() => {
+  const trafficTotal = Number(trafficConversationCount.value || 0);
+  const botTotal = Number(botConversationCount.value || 0);
+  const rows = Array.isArray(labelSummary.value) ? labelSummary.value : [];
+  const labelTotal = rows.reduce((total, row) => {
+    return total + Number(row?.conversationsCount || row?.conversations_count || 0);
+  }, 0);
+  const liveTotal = Array.isArray(liveConversations.value)
+    ? liveConversations.value.length
+    : 0;
+
+  return Math.max(trafficTotal, botTotal, labelTotal, liveTotal);
 });
 
+const trafficConversationCountText = computed(() => {
+  return formatCount(labelOverviewTotal.value);
+});
+
+const trackedLabelCount = labelName => {
+  const row = trackedLabelRows.value.find(item => item.name === labelName);
+  return Number(row?.conversationsCount || 0);
+};
+
 const aiAutomationText = computed(() => {
-  const total = Number(trafficConversationCount.value || 0);
-  const resolved = Number(aiResolvedConversationCount.value || 0);
+  const total = Number(labelOverviewTotal.value || 0);
+  const resolved = trackedLabelCount('intent_booking_confirmed');
   const rate = total ? Math.round((resolved / total) * 100) : 0;
   return `${formatCount(resolved)} (${rate}%)`;
 });
 
 const aiHandoffText = computed(() => {
-  const total = Number(trafficConversationCount.value || 0);
-  const handoff = Number(aiHandoffConversationCount.value || 0);
+  const total = Number(labelOverviewTotal.value || 0);
+  const handoff = trackedLabelCount('ai_handoff');
   const rate = total ? Math.round((handoff / total) * 100) : 0;
   return `${formatCount(handoff)} (${rate}%)`;
 });
@@ -84,7 +111,7 @@ const dateRangeText = computed(() => {
 });
 
 const averageBotMessagesPerConversation = computed(() => {
-  const conversations = Number(trafficConversationCount.value || 0);
+  const conversations = Number(labelOverviewTotal.value || 0);
   const messages = Number(String(botMessageCount.value || '0').replace(/,/g, '') || 0);
   if (!conversations) return 0;
   return Math.round((messages / conversations) * 10) / 10;
@@ -123,51 +150,120 @@ const trackedLabelNames = computed(() => {
   ];
 });
 
+const liveLabelCountByName = computed(() => {
+  const counts = {};
+  const conversations = Array.isArray(liveConversations.value)
+    ? liveConversations.value
+    : [];
+
+  conversations.forEach(conversation => {
+    const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
+    labels.forEach(label => {
+      const normalizedLabel = normalizeLabelKey(label);
+      if (!trackedLabelNames.value.includes(normalizedLabel)) return;
+      counts[normalizedLabel] = Number(counts[normalizedLabel] || 0) + 1;
+    });
+  });
+
+  return counts;
+});
+
 const trackedLabelRows = computed(() => {
-  const map = new Map(labelSummary.value.map(row => [row.name, row]));
+  const map = new Map(
+    labelSummary.value.map(row => [normalizeLabelKey(row?.name), row])
+  );
   return trackedLabelNames.value.map(name => {
+    const summaryCount = Number(map.get(name)?.conversationsCount || 0);
+    const liveCount = Number(liveLabelCountByName.value[name] || 0);
     return {
       name,
-      conversationsCount: map.get(name)?.conversationsCount ?? 0,
+      conversationsCount: Math.max(summaryCount, liveCount),
     };
   });
 });
 
+const handoverReasonDisplay = label => {
+  const raw = String(label || '');
+  const key = raw.replace(/^handover_/, '').toLowerCase();
+  const map = {
+    khach_yeu_cau: 'Khách yêu cầu gặp người',
+    ngoai_pham_vi: 'Ngoài phạm vi AI',
+    sales_opportunity: 'Cơ hội chốt đơn',
+    negative_sentiment: 'Khách tiêu cực',
+  };
+  if (map[key]) return map[key];
+  return key ? key.replace(/_/g, ' ') : raw;
+};
+
+const toTitleCase = text => {
+  const value = String(text || '').trim();
+  if (!value) return '';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+};
+
+const formatUnknownLabelDisplay = rawLabel => {
+  const label = String(rawLabel || '').toLowerCase();
+  if (!label) return '';
+  if (label.startsWith('handover_')) return handoverReasonDisplay(label);
+
+  const normalized = label
+    .replace(/^ai_/, '')
+    .replace(/^intent_/, '')
+    .replace(/_/g, ' ');
+
+  return toTitleCase(normalized);
+};
+
 const labelDisplayName = name => {
+  const normalizedName = normalizeLabelKey(name);
   const map = {
     intent_booking_confirmed: 'AI chốt lịch thành công',
     ai_handoff: 'Chuyển nhân viên',           // Đồng thời là dừng AI
+    fai_handoff: 'Chuyển nhân viên',
     ai_upset: 'Khách bực / tiêu cực',
     ai_urgent: 'Ưu tiên gấp',
     ai_lead: 'Khách tiềm năng',
     ai_lead_high: 'Khách tiềm năng (tốt)',
     ai_lead_medium: 'Khách tiềm năng (trung bình)',
     ai_lead_low: 'Khách tiềm năng (kém)',
+    payment_collection: 'Thu thập thanh toán',
     // Đã bỏ: ai_paused, khongtraloibangai (gộp vào ai_handoff)
   };
-  return map[name] || name;
+  return map[normalizedName] || formatUnknownLabelDisplay(normalizedName);
 };
 
 const labelTone = name => {
+  const normalizedName = normalizeLabelKey(name);
+  if (normalizedName.startsWith('handover_')) return 'amber';
+
   const map = {
     intent_booking_confirmed: 'teal',
     ai_handoff: 'ruby',
+    fai_handoff: 'ruby',
     ai_upset: 'ruby',
     ai_urgent: 'amber',
     ai_lead: 'blue',
     ai_lead_high: 'teal',
     ai_lead_medium: 'amber',
     ai_lead_low: 'ruby',
+    payment_collection: 'blue',
     // Đã bỏ: ai_paused, khongtraloibangai (gộp vào ai_handoff)
   };
-  return map[name] || 'slate';
+  return map[normalizedName] || 'slate';
+};
+
+const formatPercent = value => {
+  if (!value) return 0;
+  if (value > 0 && value < 0.1) return 0.1;
+  if (value < 1) return Number(value.toFixed(1));
+  return Math.round(value);
 };
 
 const labelPercent = row => {
-  const total = Number(trafficConversationCount.value || 0);
+  const total = Number(labelOverviewTotal.value || 0);
   const count = Number(row?.conversationsCount || 0);
-  if (!total) return 0;
-  return Math.min(100, Math.round((count / total) * 100));
+  if (!total || !count) return 0;
+  return Math.min(100, formatPercent((count / total) * 100));
 };
 
 const kpiTabClass = key => {
@@ -186,20 +282,11 @@ const labelRoute = label => {
   };
 };
 
-const conversationRoute = conversationId => {
-  return {
-    name: 'inbox_conversation',
-    params: {
-      accountId: route.params.accountId,
-      conversation_id: conversationId,
-    },
-  };
-};
-
 const isConversationInHumanMode = conversation => {
   // Chỉ dùng ai_handoff để đánh dấu chế độ human
   const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
-  return labels.includes(HANDOFF_LABEL);
+  const normalizedLabels = labels.map(label => normalizeLabelKey(label));
+  return normalizedLabels.includes(HANDOFF_LABEL);
 };
 
 const isConversationPaused = conversation => {
@@ -214,110 +301,6 @@ const isAllPaused = computed(() => {
   return conversations.every(isConversationPaused);
 });
 
-const conversationModeText = conversation => {
-  return isConversationInHumanMode(conversation)
-    ? 'Nhân viên'
-    : 'AI';
-};
-
-const conversationModeClass = conversation => {
-  return isConversationInHumanMode(conversation)
-    ? 'bg-n-amber-3 text-n-slate-12 outline-n-amber-6'
-    : 'bg-n-teal-3 text-n-teal-11 outline-n-teal-4';
-};
-
-const conversationPreview = conversation => {
-  const message =
-    conversation?.last_non_activity_message || conversation?.messages?.[0] || {};
-  const rawText =
-    message.processed_message_content ||
-    message.content ||
-    message?.content_attributes?.text ||
-    '';
-
-  return String(rawText || '').replace(/\s+/g, ' ').trim();
-};
-
-const conversationAIMetadataLabels = conversation => {
-  const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
-  // Lọc nhãn tracked và bỏ qua ai_handoff (đã hiển thị riêng)
-  return labels
-    .filter(label => trackedLabelNames.value.includes(label))
-    .filter(label => label !== HANDOFF_LABEL)
-    .slice(0, 5);
-};
-
-const conversationHandoverReasonLabels = conversation => {
-  const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
-  return labels.filter(label => String(label || '').startsWith('handover_')).slice(0, 3);
-};
-
-const handoverReasonDisplay = label => {
-  const raw = String(label || '');
-  const key = raw.replace(/^handover_/, '').toLowerCase();
-  const map = {
-    khach_yeu_cau: 'Khách yêu cầu gặp người',
-    ngoai_pham_vi: 'Ngoài phạm vi AI',
-    sales_opportunity: 'Cơ hội chốt đơn',
-    negative_sentiment: 'Khách tiêu cực',
-  };
-  if (map[key]) return map[key];
-  return key ? key.replace(/_/g, ' ') : raw;
-};
-
-const conversationAIMetadata = conversation => {
-  const message =
-    conversation?.last_non_activity_message || conversation?.messages?.[0] || {};
-  const metadata = message?.content_attributes?.ai_metadata;
-  return metadata && typeof metadata === 'object' ? metadata : null;
-};
-
-const sentimentVariant = conversation => {
-  const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
-  if (labels.includes('ai_upset')) return 'negative';
-
-  const aiMetadata = conversationAIMetadata(conversation);
-  const metaSentiment = String(aiMetadata?.sentiment_score || '').toLowerCase();
-  if (metaSentiment === 'negative') return 'negative';
-  if (metaSentiment === 'positive') return 'positive';
-  if (metaSentiment === 'neutral') return 'neutral';
-
-  const message =
-    conversation?.last_non_activity_message || conversation?.messages?.[0] || {};
-  const sentiment = message?.sentiment;
-
-  if (!sentiment || typeof sentiment !== 'object') return 'unknown';
-  if (Object.keys(sentiment).length === 0) return 'unknown';
-
-  const label = String(
-    sentiment.label || sentiment.sentiment || sentiment.polarity || ''
-  ).toLowerCase();
-
-  if (label.includes('neg')) return 'negative';
-  if (label.includes('pos')) return 'positive';
-  if (label.includes('neu')) return 'neutral';
-
-  const score = sentiment.score ?? sentiment.compound ?? sentiment.polarity_score;
-  if (typeof score === 'number') {
-    if (score > 0.2) return 'positive';
-    if (score < -0.2) return 'negative';
-    return 'neutral';
-  }
-
-  return 'unknown';
-};
-
-const sentimentEmoji = conversation => {
-  const map = {
-    positive: '🙂',
-    neutral: '😐',
-    negative: '🙁',
-    unknown: '—',
-  };
-
-  return map[sentimentVariant(conversation)] || map.unknown;
-};
-
 const fetchTrafficSummary = async () => {
   if (!to.value || !from.value) return;
 
@@ -331,20 +314,9 @@ const fetchTrafficSummary = async () => {
   );
   const data = response?.data || {};
 
-  trafficConversationCount.value = Number(data.conversations_count || 0);
-};
-
-const fetchBotSummary = async () => {
-  if (!to.value || !from.value) return;
-
-  const response = await ReportsAPI.getBotSummary({
-    from: from.value,
-    to: to.value,
-    businessHours: false,
-  });
-  const data = response?.data || {};
-  aiResolvedConversationCount.value = Number(data.bot_resolutions_count || 0);
-  aiHandoffConversationCount.value = Number(data.bot_handoffs_count || 0);
+  trafficConversationCount.value = Number(
+    data.incoming_conversations_count || data.conversations_count || 0
+  );
 };
 
 const fetchBotMetrics = async () => {
@@ -353,14 +325,16 @@ const fetchBotMetrics = async () => {
   try {
     const response = await ReportsAPI.getBotMetrics({ from: from.value, to: to.value });
     const data = response?.data || {};
+    botConversationCount.value = Number(data.conversation_count || 0);
     botMessageCount.value = Number(data.message_count || 0).toLocaleString();
-    
+
     // Debug: hiển thị message_count trong console
     // eslint-disable-next-line no-console
     console.log('[BotMetrics] message_count:', data.message_count);
     // eslint-disable-next-line no-console
     console.log('[BotMetrics] debug info:', data.debug);
   } catch (e) {
+    botConversationCount.value = 0;
     botMessageCount.value = '0';
   }
 };
@@ -374,19 +348,14 @@ const fetchLabelSummary = async () => {
     businessHours: false,
   });
   labelSummary.value = normalizeLabelSummary(response?.data);
-
-  const map = new Map(labelSummary.value.map(row => [row.name, row]));
-  aiResolvedConversationCount.value = Number(
-    map.get('intent_booking_confirmed')?.conversationsCount || 0
-  );
-  aiHandoffConversationCount.value = Number(
-    map.get('ai_handoff')?.conversationsCount || 0
-  );
 };
 
 const isRiskConversation = conversation => {
   const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
-  return labels.includes('ai_urgent') || labels.includes('ai_upset') || labels.includes('ai_handoff');
+  const normalizedLabels = labels.map(label => normalizeLabelKey(label));
+  return normalizedLabels.includes('ai_urgent') ||
+    normalizedLabels.includes('ai_upset') ||
+    normalizedLabels.includes(HANDOFF_LABEL);
 };
 
 const playRiskSound = async () => {
@@ -457,7 +426,6 @@ const fetchAll = async () => {
   try {
     await Promise.all([
       fetchTrafficSummary(),
-      fetchBotSummary(),
       fetchBotMetrics(),
       fetchLabelSummary(),
       fetchLiveConversations(),
@@ -477,7 +445,6 @@ const setConversationPause = async (conversationId, shouldPause) => {
   const id = String(conversationId || '').trim();
   if (!id) return;
 
-  takeoverLoadingMap.value = { ...takeoverLoadingMap.value, [id]: true };
   try {
     const response = await ConversationLabelsAPI.getLabels(id);
     const currentLabels = response?.data?.payload || [];
@@ -499,18 +466,7 @@ const setConversationPause = async (conversationId, shouldPause) => {
     });
   } catch (e) {
     useAlert('Không thể cập nhật trạng thái dừng AI cho hội thoại này.');
-  } finally {
-    const nextMap = { ...takeoverLoadingMap.value };
-    delete nextMap[id];
-    takeoverLoadingMap.value = nextMap;
   }
-};
-
-const toggleConversationPause = async conversation => {
-  const id = String(conversation?.id || '').trim();
-  if (!id) return;
-  const shouldPause = !isConversationPaused(conversation);
-  await setConversationPause(id, shouldPause);
 };
 
 const togglePauseAll = async () => {
@@ -535,18 +491,20 @@ const togglePauseAll = async () => {
   }
 };
 
+const onRefreshLiveConversations = async () => {
+  await fetchLiveConversations();
+  if (to.value && from.value) {
+    await Promise.all([fetchTrafficSummary(), fetchBotMetrics(), fetchLabelSummary()]);
+  }
+};
+
 onMounted(() => {
-  emitter.on('ai_control_panel:refresh_live_conversations', async () => {
-    await fetchLiveConversations();
-    if (to.value && from.value) {
-      await Promise.all([fetchTrafficSummary(), fetchBotMetrics(), fetchLabelSummary()]);
-    }
-  });
+  emitter.on('ai_control_panel:refresh_live_conversations', onRefreshLiveConversations);
   // Fetch happens after the first filter event
 });
 
 onBeforeUnmount(() => {
-  emitter.off('ai_control_panel:refresh_live_conversations', fetchLiveConversations);
+  emitter.off('ai_control_panel:refresh_live_conversations', onRefreshLiveConversations);
 });
 </script>
 
@@ -755,115 +713,32 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="grid gap-4 lg:grid-cols-12">
-          <div class="lg:col-span-8 shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 px-6 py-5">
-            <div class="flex items-center justify-between gap-3">
+        <div class="grid gap-4 lg:grid-cols-12 lg:items-start">
+          <div class="lg:col-span-8 self-start shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 overflow-hidden">
+            <div class="flex items-center justify-between gap-3 px-6 py-5">
               <div class="flex flex-col gap-1">
                 <div class="text-base font-medium text-n-slate-12">
-                  Hội thoại đang diễn ra
+                  Tất cả cuộc trò chuyện
                 </div>
                 <div class="text-sm text-n-slate-11">
-                  Danh sách hội thoại đang mở (AI / Nhân viên)
+                  Danh sách hội thoại đầy đủ và thao tác nhắn tin như màn hội thoại
                 </div>
               </div>
-
               <Button
                 color="slate"
                 size="sm"
                 class="h-10"
                 :is-loading="isLiveConversationsLoading"
-                label="Làm mới"
-                @click="fetchLiveConversations"
+                label="Làm mới dữ liệu AI"
+                @click="fetchAll"
               />
             </div>
 
-            <div
-              v-if="isLiveConversationsLoading && !liveConversations.length"
-              class="mt-4 text-sm text-n-slate-11"
-            >
-              Đang tải...
-            </div>
-
-            <div
-              v-else-if="!liveConversations.length"
-              class="mt-4 text-sm text-n-slate-11"
-            >
-              Chưa có hội thoại nào.
-            </div>
-
-            <div v-else class="mt-4 divide-y divide-n-weak">
-              <div
-                v-for="conversation in liveConversations"
-                :key="conversation.id"
-                class="flex items-start justify-between gap-4 py-3"
-                :class="
-                  isRiskConversation(conversation)
-                    ? 'border-l-4 border-l-n-ruby-9 pl-3'
-                    : 'border-l-4 border-l-transparent pl-3'
-                "
-              >
-                <div class="min-w-0 flex-1">
-                  <router-link
-                    class="text-sm font-medium text-n-slate-12 hover:underline"
-                    :to="conversationRoute(conversation.id)"
-                  >
-                    #{{ conversation.id }}
-                    <span v-if="conversation?.meta?.sender?.name">
-                      · {{ conversation.meta.sender.name }}
-                    </span>
-                  </router-link>
-
-                  <div class="text-xs text-n-slate-11 truncate mt-0.5">
-                    {{ conversationPreview(conversation) || '--' }}
-                  </div>
-
-                  <div
-                    v-if="conversationHandoverReasonLabels(conversation).length"
-                    class="text-xs text-n-slate-11 truncate mt-1"
-                  >
-                    <span class="font-medium text-n-slate-12">Lý do:</span>
-                    <span>
-                      {{ conversationHandoverReasonLabels(conversation).map(handoverReasonDisplay).join(', ') }}
-                    </span>
-                  </div>
-
-                  <div
-                    v-if="conversationAIMetadataLabels(conversation).length"
-                    class="flex flex-wrap gap-2 mt-2"
-                  >
-                    <span
-                      v-for="label in conversationAIMetadataLabels(conversation)"
-                      :key="label"
-                      class="text-xs rounded-md outline outline-1 outline-n-weak px-2 py-1 text-n-slate-12"
-                    >
-                      #{{ label }}
-                    </span>
-                  </div>
-                </div>
-
-                <div class="flex flex-col items-end gap-2 shrink-0">
-                  <div class="flex items-center gap-2">
-                    <span class="text-base leading-none">
-                      {{ sentimentEmoji(conversation) }}
-                    </span>
-                    <span
-                      class="text-xs rounded-full outline outline-1 px-3 py-1 font-medium"
-                      :class="conversationModeClass(conversation)"
-                    >
-                      {{ conversationModeText(conversation) }}
-                    </span>
-                  </div>
-
-                  <Button
-                    :color="isConversationPaused(conversation) ? 'blue' : 'slate'"
-                    size="sm"
-                    class="h-9"
-                    :is-loading="Boolean(takeoverLoadingMap[String(conversation.id)])"
-                    :label="isConversationPaused(conversation) ? 'Mở AI' : 'Dừng AI'"
-                    @click="toggleConversationPause(conversation)"
-                  />
-                </div>
-              </div>
+            <div class="h-[44rem] border-t border-n-weak">
+              <ConversationView
+                :inbox-id="0"
+                :conversation-id="aiControlConversationId"
+              />
             </div>
           </div>
 

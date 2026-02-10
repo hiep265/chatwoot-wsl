@@ -3,6 +3,12 @@ export const frontendURL = (path, params) => {
   return `/app/${path}${stringifiedParams}`;
 };
 
+const isAiControlConversationRoute = routeName => {
+  return ['ai_control_panel', 'ai_control_panel_conversation'].includes(
+    String(routeName || '')
+  );
+};
+
 export const conversationUrl = ({
   accountId,
   activeInbox,
@@ -11,7 +17,12 @@ export const conversationUrl = ({
   teamId,
   conversationType = '',
   foldersId,
+  routeName = '',
 }) => {
+  if (isAiControlConversationRoute(routeName)) {
+    return `accounts/${accountId}/ai-control/conversations/${id}`;
+  }
+
   let url = `accounts/${accountId}/conversations/${id}`;
   if (activeInbox) {
     url = `accounts/${accountId}/inbox/${activeInbox}/conversations/${id}`;
@@ -38,7 +49,12 @@ export const conversationListPageURL = ({
   label,
   teamId,
   customViewId,
+  routeName = '',
 }) => {
+  if (isAiControlConversationRoute(routeName)) {
+    return frontendURL(`accounts/${accountId}/ai-control/conversations`);
+  }
+
   let url = `accounts/${accountId}/dashboard`;
   if (label) {
     url = `accounts/${accountId}/label/${label}`;

@@ -52,13 +52,14 @@ RSpec.describe Contact do
     end
   end
 
-  context 'when phone number format' do
-    it 'will throw error for existing invalid phone number' do
+  context 'when phone number is updated' do
+    it 'updates phone number without e164 format' do
       contact = create(:contact)
-      expect { contact.update!(phone_number: '123456789') }.to raise_error(ActiveRecord::RecordInvalid)
+      expect(contact.update!(phone_number: '123456789')).to be true
+      expect(contact.phone_number).to eq '123456789'
     end
 
-    it 'updates phone number when adding valid phone number' do
+    it 'updates phone number in e164 format' do
       contact = create(:contact)
       expect(contact.update!(phone_number: '+12312312321')).to be true
       expect(contact.phone_number).to eq '+12312312321'
