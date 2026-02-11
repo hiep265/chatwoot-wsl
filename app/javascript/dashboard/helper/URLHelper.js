@@ -4,7 +4,18 @@ export const frontendURL = (path, params) => {
 };
 
 const isAiControlConversationRoute = routeName => {
-  return ['ai_control_panel', 'ai_control_panel_conversation'].includes(
+  return [
+    'ai_control_panel',
+    'ai_control_panel_conversation',
+    'ai_control_simple',
+    'ai_control_simple_conversation',
+  ].includes(
+    String(routeName || '')
+  );
+};
+
+const isAiControlSimpleRoute = routeName => {
+  return ['ai_control_simple', 'ai_control_simple_conversation'].includes(
     String(routeName || '')
   );
 };
@@ -20,7 +31,10 @@ export const conversationUrl = ({
   routeName = '',
 }) => {
   if (isAiControlConversationRoute(routeName)) {
-    return `accounts/${accountId}/ai-control/conversations/${id}`;
+    const path = isAiControlSimpleRoute(routeName)
+      ? `accounts/${accountId}/simple`
+      : `accounts/${accountId}/ai-control/conversations`;
+    return `${path}/${id}`;
   }
 
   let url = `accounts/${accountId}/conversations/${id}`;
@@ -52,7 +66,10 @@ export const conversationListPageURL = ({
   routeName = '',
 }) => {
   if (isAiControlConversationRoute(routeName)) {
-    return frontendURL(`accounts/${accountId}/ai-control/conversations`);
+    const path = isAiControlSimpleRoute(routeName)
+      ? `accounts/${accountId}/simple`
+      : `accounts/${accountId}/ai-control/conversations`;
+    return frontendURL(path);
   }
 
   let url = `accounts/${accountId}/dashboard`;

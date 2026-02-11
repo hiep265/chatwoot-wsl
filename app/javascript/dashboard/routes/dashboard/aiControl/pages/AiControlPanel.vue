@@ -16,6 +16,13 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import { useAlert } from 'dashboard/composables';
 import { emitter } from 'shared/helpers/mitt';
 
+const props = defineProps({
+  standalone: {
+    type: Boolean,
+    default: false,
+  },
+});
+
 const route = useRoute();
 
 const from = ref(0);
@@ -51,6 +58,12 @@ const isRiskBannerBlinking = ref(false);
 const riskBannerText = ref('');
 const riskAudio = ref(null);
 const aiControlConversationId = computed(() => route.params.conversation_id || 0);
+const adminPanelRoute = computed(() => {
+  return {
+    name: 'ai_control_panel',
+    params: { accountId: route.params.accountId },
+  };
+});
 
 const formatCount = value => {
   return Number(value || 0).toLocaleString();
@@ -514,7 +527,16 @@ onBeforeUnmount(() => {
       <ReportHeader
         header-title="Bảng điều khiển AI"
         header-description="Theo dõi hiệu suất, rủi ro và vận hành AI theo thời gian thực"
-      />
+      >
+        <router-link v-if="props.standalone" :to="adminPanelRoute">
+          <Button
+            color="slate"
+            size="sm"
+            class="h-10"
+            label="Vào trang quản trị"
+          />
+        </router-link>
+      </ReportHeader>
 
       <div class="flex flex-col gap-4 pb-6">
         <div
@@ -714,27 +736,8 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="grid gap-4 lg:grid-cols-12 lg:items-start">
-          <div class="lg:col-span-8 self-start shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 overflow-hidden">
-            <div class="flex items-center justify-between gap-3 px-6 py-5">
-              <div class="flex flex-col gap-1">
-                <div class="text-base font-medium text-n-slate-12">
-                  Tất cả cuộc trò chuyện
-                </div>
-                <div class="text-sm text-n-slate-11">
-                  Danh sách hội thoại đầy đủ và thao tác nhắn tin như màn hội thoại
-                </div>
-              </div>
-              <Button
-                color="slate"
-                size="sm"
-                class="h-10"
-                :is-loading="isLiveConversationsLoading"
-                label="Làm mới dữ liệu AI"
-                @click="fetchAll"
-              />
-            </div>
-
-            <div class="h-[44rem] border-t border-n-weak">
+          <div class="lg:col-span-9 self-start shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 overflow-hidden">
+            <div class="h-[52rem]">
               <ConversationView
                 :inbox-id="0"
                 :conversation-id="aiControlConversationId"
@@ -742,7 +745,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div class="lg:col-span-4 flex flex-col gap-4">
+          <div class="lg:col-span-3 flex flex-col gap-4">
             <div class="shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 px-6 py-5">
               <div class="flex items-center justify-between gap-3">
                 <div class="flex flex-col gap-1">

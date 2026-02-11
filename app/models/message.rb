@@ -45,6 +45,8 @@ class Message < ApplicationRecord
   include Liquidable
   NUMBER_OF_PERMITTED_ATTACHMENTS = 15
   AUTO_CLEAR_HANDOFF_LABELS = %w[ai_handoff fai_handoff].freeze
+  BOT_RESPONSE_SENDER_TYPES = ['AgentBot', 'Captain::Assistant'].freeze
+  BOT_RESPONSE_PROVIDERS = ['chatbotlevan'].freeze
 
   TEMPLATE_PARAMS_SCHEMA = {
     'type': 'object',
@@ -311,7 +313,7 @@ class Message < ApplicationRecord
   def execute_after_create_commit_callbacks
     # rails issue with order of active record callbacks being executed https://github.com/rails/rails/issues/20911
     reopen_conversation
-    clear_handoff_labels_on_incoming_contact_message
+    clear_handoff_labels_on_non_bot_message
     set_conversation_activity
     dispatch_create_events
     send_reply
@@ -319,9 +321,10 @@ class Message < ApplicationRecord
     update_contact_activity
   end
 
-  def clear_handoff_labels_on_incoming_contact_message
-    return unless incoming?
-    return unless sender.instance_of?(Contact)
+  def clear_handoff_labels_on_non_bot_message
+    return if private?
+    return unless incoming? || outgoing?
+    return if bot_response?
 
     current_labels = conversation.label_list.map(&:to_s)
     next_labels = current_labels.reject do |label|
@@ -366,8 +369,9 @@ class Message < ApplicationRecord
   end
 
   def bot_response?
-    # Check if this is a response from AgentBot or Captain::Assistant
-    outgoing? && sender_type.in?(['AgentBot', 'Captain::Assistant'])
+    return false unless outgoing?
+
+    sender_type.in?(BOT_RESPONSE_SENDER_TYPES) || custom_bot_generated_message?
   end
 
   def dispatch_create_events
@@ -379,6 +383,24 @@ class Message < ApplicationRecord
     else
       update_waiting_since
     end
+  end
+
+  def custom_bot_generated_message?
+    attrs = normalized_content_attributes
+    return false if attrs.blank?
+
+    is_bot_generated = ActiveModel::Type::Boolean.new.cast(attrs['is_bot_generated'])
+    bot_provider = attrs['bot_provider'].to_s.downcase
+
+    is_bot_generated || bot_provider.in?(BOT_RESPONSE_PROVIDERS)
+  end
+
+  def normalized_content_attributes
+    attrs = content_attributes
+    attrs = JSON.parse(attrs) if attrs.is_a?(String)
+    attrs.is_a?(Hash) ? attrs.stringify_keys : {}
+  rescue JSON::ParserError
+    {}
   end
 
   def dispatch_update_event

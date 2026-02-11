@@ -271,7 +271,7 @@ RSpec.describe Message do
     end
   end
 
-  describe '#clear_handoff_labels_on_incoming_contact_message' do
+  describe '#clear_handoff_labels_on_non_bot_message' do
     let(:conversation) { create(:conversation) }
 
     it 'removes handoff labels after an incoming contact message' do
@@ -282,20 +282,44 @@ RSpec.describe Message do
       expect(conversation.reload.label_list).to match_array(['ai_lead'])
     end
 
-    it 'does not remove handoff label for outgoing human messages' do
+    it 'removes handoff labels for outgoing human messages' do
       conversation.update!(label_list: %w[ai_handoff ai_lead])
       agent = create(:user, account: conversation.account)
 
       create(:message, conversation: conversation, message_type: :outgoing, sender: agent)
 
+      expect(conversation.reload.label_list).to match_array(['ai_lead'])
+    end
+
+    it 'does not remove handoff label for outgoing bot messages' do
+      conversation.update!(label_list: %w[ai_handoff ai_lead])
+      bot = create(:agent_bot, account: conversation.account)
+
+      create(:message, conversation: conversation, message_type: :outgoing, sender: bot)
+
       expect(conversation.reload.label_list).to include('ai_handoff')
     end
 
-    it 'does not remove handoff label when incoming sender is not a contact' do
+    it 'does not remove handoff label for outgoing provider bot messages' do
       conversation.update!(label_list: %w[ai_handoff ai_lead])
       agent = create(:user, account: conversation.account)
 
-      create(:message, conversation: conversation, message_type: :incoming, sender: agent)
+      create(
+        :message,
+        conversation: conversation,
+        message_type: :outgoing,
+        sender: agent,
+        content_attributes: { is_bot_generated: true, bot_provider: 'chatbotlevan' }
+      )
+
+      expect(conversation.reload.label_list).to include('ai_handoff')
+    end
+
+    it 'does not remove handoff label for private notes' do
+      conversation.update!(label_list: %w[ai_handoff ai_lead])
+      agent = create(:user, account: conversation.account)
+
+      create(:message, conversation: conversation, message_type: :outgoing, sender: agent, private: true)
 
       expect(conversation.reload.label_list).to include('ai_handoff')
     end

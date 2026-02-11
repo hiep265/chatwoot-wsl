@@ -10,6 +10,13 @@ const routes = [...dashboard.routes];
 
 export const router = createRouter({ history: createWebHistory(), routes });
 
+const AI_CONTROL_SIMPLE_ENTRY_ROUTES = new Set([
+  'ai_control_simple_entry',
+  'ai_control_simple_conversation_entry',
+  'ai_control_app_simple_entry',
+  'ai_control_app_simple_conversation_entry',
+]);
+
 export const validateAuthenticateRoutePermission = (to, next) => {
   const { isLoggedIn, getCurrentUser: user } = store.getters;
 
@@ -29,6 +36,12 @@ export const validateAuthenticateRoutePermission = (to, next) => {
 
   if (to.name === 'no_accounts' || !to.name) {
     return next(frontendURL(`accounts/${accountId}/dashboard`));
+  }
+
+  if (AI_CONTROL_SIMPLE_ENTRY_ROUTES.has(String(to.name || ''))) {
+    const conversationId = String(to.params.conversation_id || '').trim();
+    const suffix = conversationId ? `simple/${conversationId}` : 'simple';
+    return next(frontendURL(`accounts/${accountId}/${suffix}`));
   }
 
   const nextRoute = validateLoggedInRoutes(to, store.getters.getCurrentUser);

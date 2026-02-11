@@ -16,6 +16,8 @@ const accountLabels = useMapGetter('labels/getLabels');
 const AI_CONTROL_ROUTE_NAMES = [
   'ai_control_panel',
   'ai_control_panel_conversation',
+  'ai_control_simple',
+  'ai_control_simple_conversation',
 ];
 const HANDOFF_LABEL = 'ai_handoff';
 const LABEL_ALIASES = {
