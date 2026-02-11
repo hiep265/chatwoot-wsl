@@ -25,6 +25,8 @@
 class Captain::AssistantResponse < ApplicationRecord
   self.table_name = 'captain_assistant_responses'
 
+  SCAN_METADATA_REGEX = /\A\s*\[\[scan_meta\]\](?<payload>\{.*?\})\[\[\/scan_meta\]\]\s*/m.freeze
+
   belongs_to :assistant, class_name: 'Captain::Assistant'
   belongs_to :account
   belongs_to :documentable, polymorphic: true, optional: true
@@ -44,9 +46,52 @@ class Captain::AssistantResponse < ApplicationRecord
 
   enum status: { pending: 0, approved: 1 }
 
+  def scan_metadata
+    self.class.extract_scan_metadata(answer)
+  end
+
+  def display_answer
+    self.class.strip_scan_metadata(answer)
+  end
+
   def self.search(query, account_id: nil)
     embedding = Captain::Llm::EmbeddingService.new(account_id: account_id).get_embedding(query)
     nearest_neighbors(:embedding, embedding, distance: 'cosine').limit(5)
+  end
+
+  def self.extract_scan_metadata(raw_answer)
+    text = raw_answer.to_s
+    return {} if text.blank?
+
+    scan_metadata_match = text.match(SCAN_METADATA_REGEX)
+    if scan_metadata_match
+      parsed = JSON.parse(scan_metadata_match[:payload]) rescue {}
+      return parsed.is_a?(Hash) ? parsed.stringify_keys : {}
+    end
+
+    parsed = JSON.parse(text) rescue nil
+    return {} unless parsed.is_a?(Hash)
+
+    parsed.slice('conversation_id', 'message_id').stringify_keys
+  end
+
+  def self.strip_scan_metadata(raw_answer)
+    text = raw_answer.to_s
+    return '' if text.blank?
+
+    stripped = text.sub(SCAN_METADATA_REGEX, '').strip
+    return stripped if stripped != text
+
+    parsed = JSON.parse(text) rescue nil
+    return text.strip unless parsed.is_a?(Hash)
+
+    parsed_answer = parsed['answer'].to_s.strip
+    return parsed_answer if parsed_answer.present?
+
+    metadata_keys = parsed.keys.map(&:to_s)
+    return '' if (metadata_keys - %w[conversation_id message_id]).empty?
+
+    text.strip
   end
 
   private

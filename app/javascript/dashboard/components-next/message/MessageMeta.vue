@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { messageTimestamp } from 'shared/helpers/timeHelper';
 
 import MessageStatus from './MessageStatus.vue';
+import BotAnswerFeedback from './BotAnswerFeedback.vue';
 import Icon from 'next/icon/Icon.vue';
 import { useInbox } from 'dashboard/composables/useInbox';
 import { useMessageContext } from './provider.js';
@@ -132,6 +133,6 @@ const statusToShow = computed(() => {
     </div>
     <Icon v-if="isPrivate" icon="i-lucide-lock-keyhole" class="size-3" />
     <MessageStatus v-if="showStatusIndicator" :status="statusToShow" />
+    <BotAnswerFeedback />
   </div>
 </template>
-`

@@ -253,6 +253,33 @@
     "MESSAGE_ERROR": "Unable to send this message, please try again later",
     "SENT_BY": "Sent by:",
     "BOT": "Bot",
+    "BOT_FEEDBACK": {
+      "ACTION": "Mark answer as incorrect",
+      "FALLBACK_QUESTION": "Customer question flagged from bot message",
+      "DIALOG": {
+        "TITLE": "Flag this bot answer",
+        "DESCRIPTION": "Add a note so this item can be reviewed in Captain Pending FAQs.",
+        "ASSISTANT_PLACEHOLDER": "Select assistant",
+        "ASSISTANT_SEARCH_PLACEHOLDER": "Search assistants...",
+        "ASSISTANT_LOADING": "Loading assistants...",
+        "ASSISTANT_EMPTY": "No assistants available",
+        "ASSISTANT_REQUIRED": "Please select an assistant",
+        "NOTE_LABEL": "Reviewer note",
+        "NOTE_PLACEHOLDER": "Describe what is incorrect and what should be improved...",
+        "CONFIRM": "Send to Pending FAQs"
+      },
+      "ALERTS": {
+        "SUCCESS": "Sent to Captain Pending FAQs",
+        "ERROR": "Could not send this feedback. Please try again.",
+        "ASSISTANT_FETCH_ERROR": "Could not load assistants. Please try again.",
+        "MISSING_ASSISTANT": "Could not identify the Captain assistant for this message."
+      },
+      "PENDING_ANSWER": {
+        "CUSTOMER_QUESTION_TITLE": "Customer question:",
+        "BOT_ANSWER_TITLE": "Bot answer marked as incorrect:",
+        "NOTE_TITLE": "Reviewer note:"
+      }
+    },
     "SEND_FAILED": "Couldn't send message! Try again",
     "TRY_AGAIN": "retry",
     "ASSIGNMENT": {

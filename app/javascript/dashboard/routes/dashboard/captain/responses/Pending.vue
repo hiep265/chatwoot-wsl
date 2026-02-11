@@ -90,16 +90,22 @@ const handleScanAnswer = async responseId => {
   isScanningOne.value = currentId;
   try {
     const response = await CaptainResponsesAPI.scanAnswer(currentId);
-    const { suggested_answer } = response.data;
-    
+    const { suggested_question, suggested_answer } = response.data;
+
     if (suggested_answer && !suggested_answer.includes('[Không tìm thấy')) {
-      // Cập nhật answer và approve luôn
-      await store.dispatch('captainResponses/update', {
+      // Cập nhật question + answer và approve luôn
+      const payload = {
         id: currentId,
         answer: suggested_answer,
         status: 'approved',
-      });
-      useAlert('Đã tìm và cập nhật câu trả lời thành công!');
+      };
+      const questionText = String(suggested_question || '').trim();
+      if (questionText) {
+        payload.question = questionText;
+      }
+
+      await store.dispatch('captainResponses/update', payload);
+      useAlert('Đã cập nhật cả câu hỏi và câu trả lời thành công!');
       fetchResponses(responseMeta.value?.page);
     } else {
       useAlert('Không tìm thấy câu trả lời phù hợp từ conversation');

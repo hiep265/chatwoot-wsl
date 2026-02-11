@@ -89,13 +89,12 @@ class V2::Reports::BotMetricsBuilder
   end
 
   def bot_messages
-    # Đếm tin nhắn bot từ chatbotlevan.
     # Normalize content_attributes to jsonb object to handle double-encoded JSON.
     normalized_attrs = "(content_attributes #>> '{}')::jsonb"
     @bot_messages ||= account.messages.outgoing
                              .where(created_at: range)
                              .where(private: false)
-                             .where("#{normalized_attrs} ->> 'is_bot_generated' = 'true' OR #{normalized_attrs} ->> 'bot_provider' = 'chatbotlevan'")
+                             .where("#{normalized_attrs} ->> 'is_bot_generated' = 'true'")
   end
 
   def bot_resolutions_count
