@@ -44,6 +44,9 @@ if (isLibraryMode) {
 
 export default defineConfig({
   plugins: plugins,
+  server: {
+    allowedHosts: ['vite', 'localhost', '127.0.0.1'],
+  },
   build: {
     rollupOptions: {
       output: {
