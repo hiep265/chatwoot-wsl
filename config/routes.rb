@@ -91,6 +91,7 @@ Rails.application.routes.draw do
               post :follow_up
             end
           end
+          post 'ai_control/train_faq', to: 'ai_control#train_faq'
           resource :saml_settings, only: [:show, :create, :update, :destroy]
           resources :agent_bots, only: [:index, :create, :show, :update, :destroy] do
             delete :avatar, on: :member

@@ -6,6 +6,7 @@ import ReportsAPI from 'dashboard/api/reports';
 import SummaryReportsAPI from 'dashboard/api/summaryReports';
 import ConversationLabelsAPI from 'dashboard/api/conversations';
 import InboxConversationAPI from 'dashboard/api/inbox/conversation';
+import AiControlAPI from 'dashboard/api/aiControl';
 
 import ReportHeader from '../../settings/reports/components/ReportHeader.vue';
 import ReportFilterSelector from '../../settings/reports/components/FilterSelector.vue';
@@ -51,6 +52,9 @@ const normalizeLabelKey = label => {
 };
 
 const isTakeoverAllLoading = ref(false);
+const faqTrainingDays = ref(7);
+const isFaqTrainingLoading = ref(false);
+const faqTrainingReport = ref(null);
 
 const riskConversationIds = ref(new Set());
 const isRiskBannerVisible = ref(false);
@@ -448,6 +452,53 @@ const fetchAll = async () => {
   }
 };
 
+const formatIsoDateTime = iso => {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('vi-VN');
+  } catch (e) {
+    return '';
+  }
+};
+
+const runFaqTraining = async () => {
+  const days = Number(faqTrainingDays.value || 0);
+  if (!Number.isFinite(days) || days < 1 || days > 365) {
+    useAlert('Số ngày training phải trong khoảng 1-365.');
+    return;
+  }
+
+  isFaqTrainingLoading.value = true;
+  try {
+    const response = await AiControlAPI.trainFaq({
+      days,
+      dryRun: false,
+      conversationsPerBatch: 20,
+    });
+
+    const report = response?.data?.report || response?.data;
+    faqTrainingReport.value =
+      report && typeof report === 'object' ? report : null;
+
+    const created = Number(report?.published_count || 0);
+    const duplicates = Number(report?.duplicate_count || 0);
+    const conflicts = Number(report?.conflict_count || 0);
+    const errors = Number(report?.error_count || 0);
+    useAlert(
+      `Training FAQ ${days} ngày xong: mới ${created}, trùng ${duplicates}, conflict ${conflicts}, lỗi ${errors}.`
+    );
+  } catch (error) {
+    const message =
+      error?.response?.data?.detail?.error ||
+      error?.response?.data?.detail?.raw ||
+      error?.response?.data?.error ||
+      'Không thể chạy training FAQ.';
+    useAlert(String(message));
+  } finally {
+    isFaqTrainingLoading.value = false;
+  }
+};
+
 const onFilterChange = async ({ from: nextFrom, to: nextTo }) => {
   from.value = nextFrom;
   to.value = nextTo;
@@ -771,6 +822,73 @@ onBeforeUnmount(() => {
                 <div class="text-xs text-n-slate-11">
                   Trạng thái: <span class="font-medium text-n-slate-12">{{ isAllPaused ? 'Đang dừng' : 'Đang chạy' }}</span>
                   · Áp dụng cho danh sách hội thoại đang mở.
+                </div>
+              </div>
+            </div>
+
+            <div class="shadow outline-1 outline outline-n-container rounded-xl bg-n-solid-2 px-6 py-5">
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex flex-col gap-1">
+                  <div class="text-base font-medium text-n-slate-12">
+                    FAQ Training
+                  </div>
+                  <div class="text-sm text-n-slate-11">
+                    Quét hội thoại theo số ngày và tạo FAQ vào Captain
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-4 grid gap-3">
+                <label class="text-xs text-n-slate-11" for="faq-training-days">
+                  Số ngày lấy hội thoại
+                </label>
+                <input
+                  id="faq-training-days"
+                  v-model.number="faqTrainingDays"
+                  type="number"
+                  min="1"
+                  max="365"
+                  class="h-10 rounded-lg outline outline-1 outline-n-weak bg-n-solid-1 px-3 text-sm text-n-slate-12"
+                />
+
+                <Button
+                  color="blue"
+                  size="sm"
+                  class="h-10"
+                  :is-loading="isFaqTrainingLoading"
+                  label="Training FAQ ngay"
+                  @click="runFaqTraining"
+                />
+
+                <div class="text-xs text-n-slate-11">
+                  API: <span class="font-medium text-n-slate-12">/api/v1/accounts/:account_id/ai_control/train_faq</span>
+                </div>
+
+                <div
+                  v-if="faqTrainingReport"
+                  class="rounded-lg outline outline-1 outline-n-weak px-3 py-3 text-xs text-n-slate-11"
+                >
+                  <div>
+                    Run ID:
+                    <span class="font-medium text-n-slate-12">{{ faqTrainingReport.run_id || '--' }}</span>
+                  </div>
+                  <div class="mt-1">
+                    Trạng thái:
+                    <span class="font-medium text-n-slate-12">{{ faqTrainingReport.status || '--' }}</span>
+                  </div>
+                  <div class="mt-1">
+                    Kết quả:
+                    <span class="font-medium text-n-slate-12">
+                      mới {{ Number(faqTrainingReport.published_count || 0).toLocaleString() }},
+                      trùng {{ Number(faqTrainingReport.duplicate_count || 0).toLocaleString() }},
+                      conflict {{ Number(faqTrainingReport.conflict_count || 0).toLocaleString() }},
+                      lỗi {{ Number(faqTrainingReport.error_count || 0).toLocaleString() }}
+                    </span>
+                  </div>
+                  <div class="mt-1">
+                    Hoàn thành:
+                    <span class="font-medium text-n-slate-12">{{ formatIsoDateTime(faqTrainingReport.finished_at) || '--' }}</span>
+                  </div>
                 </div>
               </div>
             </div>

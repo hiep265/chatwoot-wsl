@@ -1,11 +1,17 @@
-version: '3'
-
 services:
   base: &base
-    image: chatwoot/chatwoot:latest
-    env_file: .env ## Change this file for customized env variables
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+      args:
+        RAILS_ENV: 'production'
+        RAILS_SERVE_STATIC_FILES: 'true'
+    image: chatwoot:production-local
+    env_file: .env
     volumes:
       - storage_data:/app/storage
+    networks:
+      - chatwoot_network
 
   rails:
     <<: *base
@@ -13,7 +19,7 @@ services:
       - postgres
       - redis
     ports:
-      - '127.0.0.1:3000:3000'
+      - '3000:3000'
     environment:
       - NODE_ENV=production
       - RAILS_ENV=production
@@ -37,15 +43,14 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     restart: always
-    ports:
-      - '127.0.0.1:5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
       - POSTGRES_DB=chatwoot
       - POSTGRES_USER=postgres
-      # Please provide your own password.
-      - POSTGRES_PASSWORD=
+      - POSTGRES_PASSWORD=postgres
+    networks:
+      - chatwoot_network
 
   redis:
     image: redis:alpine
@@ -54,8 +59,12 @@ services:
     env_file: .env
     volumes:
       - redis_data:/data
-    ports:
-      - '127.0.0.1:6379:6379'
+    networks:
+      - chatwoot_network
+
+networks:
+  chatwoot_network:
+    driver: bridge
 
 volumes:
   storage_data:
