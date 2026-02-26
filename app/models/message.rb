@@ -323,7 +323,7 @@ class Message < ApplicationRecord
 
   def clear_handoff_labels_on_non_bot_message
     return if private?
-    return unless incoming? || outgoing?
+    return unless human_response?
     return if bot_response?
 
     current_labels = conversation.label_list.map(&:to_s)

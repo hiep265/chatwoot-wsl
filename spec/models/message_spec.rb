@@ -274,12 +274,12 @@ RSpec.describe Message do
   describe '#clear_handoff_labels_on_non_bot_message' do
     let(:conversation) { create(:conversation) }
 
-    it 'removes handoff labels after an incoming contact message' do
+    it 'does not remove handoff labels after an incoming contact message' do
       conversation.update!(label_list: %w[ai_handoff fai_handoff ai_lead])
 
       create(:message, conversation: conversation, message_type: :incoming, sender: conversation.contact)
 
-      expect(conversation.reload.label_list).to match_array(['ai_lead'])
+      expect(conversation.reload.label_list).to match_array(%w[ai_handoff fai_handoff ai_lead])
     end
 
     it 'removes handoff labels for outgoing human messages' do
@@ -289,6 +289,36 @@ RSpec.describe Message do
       create(:message, conversation: conversation, message_type: :outgoing, sender: agent)
 
       expect(conversation.reload.label_list).to match_array(['ai_lead'])
+    end
+
+    it 'does not remove handoff label for outgoing automation messages' do
+      conversation.update!(label_list: %w[ai_handoff ai_lead])
+      agent = create(:user, account: conversation.account)
+
+      create(
+        :message,
+        conversation: conversation,
+        message_type: :outgoing,
+        sender: agent,
+        content_attributes: { automation_rule_id: 1 }
+      )
+
+      expect(conversation.reload.label_list).to match_array(%w[ai_handoff ai_lead])
+    end
+
+    it 'does not remove handoff label for outgoing campaign messages' do
+      conversation.update!(label_list: %w[ai_handoff ai_lead])
+      agent = create(:user, account: conversation.account)
+
+      create(
+        :message,
+        conversation: conversation,
+        message_type: :outgoing,
+        sender: agent,
+        additional_attributes: { campaign_id: 1 }
+      )
+
+      expect(conversation.reload.label_list).to match_array(%w[ai_handoff ai_lead])
     end
 
     it 'does not remove handoff label for outgoing bot messages' do

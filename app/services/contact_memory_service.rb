@@ -5,6 +5,15 @@ require 'httparty'
 class ContactMemoryService
   EMBEDDING_MODEL = 'text-embedding-3-small'
   EMBEDDING_DIMENSIONS = 1536
+  ALLOWED_CATEGORIES = %w[preference behavior context fact].freeze
+  CATEGORY_FALLBACK_MAP = {
+    'purchase' => 'fact',
+    'order' => 'fact',
+    'purchase_history' => 'fact',
+    'buying_intent' => 'context',
+    'intent' => 'context',
+    'habit' => 'behavior'
+  }.freeze
   
   def initialize(contact)
     @contact = contact
@@ -13,18 +22,27 @@ class ContactMemoryService
   
   # Thêm memory mới
   def add_memory(content, category: 'fact', metadata: {})
+    normalized_category = normalize_category(category)
     memory = @contact.contact_memories.new(
       content: content,
-      category: category,
+      category: normalized_category,
       metadata: metadata,
       account: @account
     )
     
     if memory.save
-      # Tạo embedding async (không block response)
-      EmbeddingGenerationJob.perform_later(memory.id, content)
+      # Tạo embedding async (không để lỗi hàng đợi làm hỏng API create)
+      begin
+        EmbeddingGenerationJob.perform_later(memory.id, content)
+      rescue StandardError => e
+        Rails.logger.error "Failed to enqueue embedding job for memory #{memory.id}: #{e.message}"
+      end
       memory
     else
+      Rails.logger.warn(
+        "[ContactMemoryService#add_memory] validation_failed contact_id=#{@contact.id} " \
+        "category=#{normalized_category} errors=#{memory.errors.full_messages.join('; ')}"
+      )
       nil
     end
   end
@@ -33,9 +51,13 @@ class ContactMemoryService
   def search(query, limit: 5, vector_weight: 0.7, text_weight: 0.3)
     # Tạo embedding cho query
     query_embedding = generate_embedding(query)
-    
-    return [] if query_embedding.blank?
-    
+
+    if query_embedding.blank?
+      # Fallback keyword-only khi thiếu OPENAI_API_KEY hoặc lỗi gọi embedding
+      vector_weight = 0.0
+      text_weight = 1.0
+    end
+
     ContactMemory.hybrid_search(
       query: query,
       query_embedding: query_embedding,
@@ -116,6 +138,14 @@ class ContactMemoryService
   end
   
   private
+
+  def normalize_category(category)
+    raw = category.to_s.strip.downcase
+    return 'fact' if raw.blank?
+    return raw if ALLOWED_CATEGORIES.include?(raw)
+
+    CATEGORY_FALLBACK_MAP.fetch(raw, 'fact')
+  end
   
   def openai_api_key
     @openai_api_key ||= ENV.fetch('OPENAI_API_KEY', nil)

@@ -7,8 +7,8 @@ class ContactMemory < ApplicationRecord
   validates :content, presence: true
   validates :category, inclusion: { in: %w[preference behavior context fact] }
   
-  # Callbacks để tạo search_vector
-  before_save :update_search_vector, if: :content_changed?
+  # Rails 7.1: dùng will_save_change_to_content? thay cho content_changed?
+  before_save :update_search_vector, if: :will_save_change_to_content?
   
   # Scope cho vector similarity search
   scope :by_vector_similarity, ->(embedding_vector, threshold: 0.7, limit: 20) {
@@ -35,6 +35,18 @@ class ContactMemory < ApplicationRecord
       .order(Arel.sql("ts_rank_cd(search_vector, #{tsquery}, 32) DESC"))
       .limit(limit)
   }
+
+  # Fallback khi DB không có text search config "vietnamese"
+  scope :by_bm25_simple, ->(query, limit: 20) {
+    return none if query.blank?
+
+    tsquery = sanitize_sql_for_conditions(["plainto_tsquery('simple', ?)", query])
+
+    select("*, ts_rank_cd(search_vector, #{tsquery}, 32) AS rank")
+      .where("search_vector @@ plainto_tsquery('simple', ?)", query)
+      .order(Arel.sql("ts_rank_cd(search_vector, #{tsquery}, 32) DESC"))
+      .limit(limit)
+  }
   
   # Hybrid search: kết hợp vector + BM25
   def self.hybrid_search(query:, query_embedding:, contact_id:, 
@@ -49,14 +61,26 @@ class ContactMemory < ApplicationRecord
     text_limit = limit * candidate_multiplier
     
     # Vector search
-    vector_results = where(contact_id: contact_id)
-                       .by_vector_similarity(query_embedding, limit: vector_limit)
-                       .to_a
+    vector_results = begin
+      where(contact_id: contact_id)
+        .by_vector_similarity(query_embedding, limit: vector_limit)
+        .to_a
+    rescue ActiveRecord::StatementInvalid => e
+      Rails.logger.warn("[ContactMemory] vector search fallback contact_id=#{contact_id} error=#{e.message}")
+      []
+    end
     
     # BM25 search  
-    text_results = where(contact_id: contact_id)
-                     .by_bm25(query, limit: text_limit)
-                     .to_a
+    text_results = begin
+      where(contact_id: contact_id)
+        .by_bm25(query, limit: text_limit)
+        .to_a
+    rescue ActiveRecord::StatementInvalid => e
+      Rails.logger.warn("[ContactMemory] bm25(vietnamese) fallback to simple contact_id=#{contact_id} error=#{e.message}")
+      where(contact_id: contact_id)
+        .by_bm25_simple(query, limit: text_limit)
+        .to_a
+    end
     
     # Merge results theo ID
     results_map = {}
@@ -111,18 +135,15 @@ class ContactMemory < ApplicationRecord
   end
   
   private
-  
+
   def update_search_vector
-    # Tạo tsvector từ content, dùng tiếng Việt nếu có, fallback về simple
-    self.search_vector = self.class.connection.execute(
-      self.class.sanitize_sql_for_assignment(
-        ["SELECT to_tsvector('vietnamese', ?)", content]
+    # Dùng simple để tránh transaction bị abort khi DB không có config "vietnamese".
+    # Search path đã có fallback BM25 sang simple rồi.
+    self.search_vector = self.class.connection.select_value(
+      self.class.send(
+        :sanitize_sql_array,
+        ["SELECT to_tsvector('simple', ?)", content]
       )
-    ).values.first&.first || ""
-  rescue StandardError
-    # Fallback nếu Vietnamese config không có
-    self.search_vector = self.class.connection.execute(
-      "SELECT to_tsvector('simple', #{self.class.connection.quote(content)})"
-    ).values.first&.first || ""
+    ) || ""
   end
 end

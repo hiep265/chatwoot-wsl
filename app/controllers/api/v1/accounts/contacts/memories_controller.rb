@@ -30,26 +30,41 @@ module Api
           # POST /api/v1/accounts/:account_id/contacts/:contact_id/memories
           # Thêm memory mới
           def create
+            Rails.logger.info(
+              "[MemoriesController#create] account_id=#{Current.account&.id} contact_id=#{@contact&.id} " \
+              "category=#{params[:category]} content_preview=#{params[:content].to_s[0, 120]}"
+            )
+
             service = ContactMemoryService.new(@contact)
             memory = service.add_memory(
               params[:content],
               category: params[:category] || 'fact',
               metadata: params[:metadata] || {}
             )
-            
+
             if memory
-              render json: { 
-                success: true, 
+              render json: {
+                success: true,
                 data: memory.as_json(
                   only: [:id, :content, :category, :metadata, :created_at]
                 )
               }, status: :created
             else
-              render json: { 
-                success: false, 
-                error: 'Failed to create memory' 
+              render json: {
+                success: false,
+                error: 'Failed to create memory'
               }, status: :unprocessable_entity
             end
+          rescue StandardError => e
+            Rails.logger.error(
+              "[MemoriesController#create] error class=#{e.class.name} message=#{e.message} " \
+              "backtrace=#{e.backtrace&.first(10)&.join("\n")}"
+            )
+            render json: {
+              status: 500,
+              error: 'Internal Server Error',
+              detail: "#{e.class}: #{e.message}"
+            }, status: :internal_server_error
           end
           
           # POST /api/v1/accounts/:account_id/contacts/:contact_id/memories/search
@@ -60,7 +75,12 @@ module Api
                 error: 'Query parameter is required' 
               }, status: :bad_request
             end
-            
+
+            Rails.logger.info(
+              "[MemoriesController#search] account_id=#{Current.account&.id} contact_id=#{@contact&.id} " \
+              "query=#{params[:query].to_s[0, 200]} limit=#{params[:limit]}"
+            )
+
             service = ContactMemoryService.new(@contact)
             results = service.search(
               params[:query],
@@ -86,6 +106,16 @@ module Api
                 }
               end
             }
+          rescue StandardError => e
+            Rails.logger.error(
+              "[MemoriesController#search] error class=#{e.class.name} message=#{e.message} " \
+              "backtrace=#{e.backtrace&.first(10)&.join("\n")}"
+            )
+            render json: {
+              status: 500,
+              error: 'Internal Server Error',
+              detail: "#{e.class}: #{e.message}"
+            }, status: :internal_server_error
           end
           
           # DELETE /api/v1/accounts/:account_id/contacts/:contact_id/memories/:id

@@ -42,13 +42,30 @@ const isLiveConversationsLoading = ref(false);
 
 // Chỉ dùng ai_handoff để đánh dấu cả chuyển nhân viên và dừng AI
 const HANDOFF_LABEL = 'ai_handoff';
+const BOOKING_CONFIRMED_LABEL = 'y_dinh_dat_lich_xac_nhan';
 const LABEL_ALIASES = {
   fai_handoff: HANDOFF_LABEL,
+  intent_booking_confirmed: BOOKING_CONFIRMED_LABEL,
+  ai_upset: 'cam_xuc_tieu_cuc',
+  ai_urgent: 'uu_tien_gap',
+  ai_lead: 'khach_tiem_nang',
+  ai_lead_high: 'khach_tiem_nang_cao',
+  ai_lead_medium: 'khach_tiem_nang_trung_binh',
+  ai_lead_low: 'khach_tiem_nang_thap',
+  payment_collection: 'thu_thap_thanh_toan',
+  handover_sales_opportunity: 'ly_do_handoff_co_hoi_chot_don',
+  handover_negative_sentiment: 'ly_do_handoff_khach_tieu_cuc',
 };
 
 const normalizeLabelKey = label => {
-  const key = String(label || '').toLowerCase();
-  return LABEL_ALIASES[key] || key;
+  const key = String(label || '').toLowerCase().trim();
+  const directAlias = LABEL_ALIASES[key];
+  if (directAlias) return directAlias;
+
+  if (key.startsWith('intent_')) return `y_dinh_${key.replace(/^intent_/, '')}`;
+  if (key.startsWith('handover_')) return `ly_do_handoff_${key.replace(/^handover_/, '')}`;
+
+  return key;
 };
 
 const isTakeoverAllLoading = ref(false);
@@ -92,13 +109,14 @@ const trafficConversationCountText = computed(() => {
 });
 
 const trackedLabelCount = labelName => {
-  const row = trackedLabelRows.value.find(item => item.name === labelName);
+  const normalized = normalizeLabelKey(labelName);
+  const row = trackedLabelRows.value.find(item => item.name === normalized);
   return Number(row?.conversationsCount || 0);
 };
 
 const aiAutomationText = computed(() => {
   const total = Number(labelOverviewTotal.value || 0);
-  const resolved = trackedLabelCount('intent_booking_confirmed');
+  const resolved = trackedLabelCount(BOOKING_CONFIRMED_LABEL);
   const rate = total ? Math.round((resolved / total) * 100) : 0;
   return `${formatCount(resolved)} (${rate}%)`;
 });
@@ -135,9 +153,12 @@ const averageBotMessagesPerConversation = computed(() => {
 });
 
 const topHandoverReasons = computed(() => {
-  const rows = Array.isArray(labelSummary.value) ? labelSummary.value : [];
+  const rows = Array.isArray(trackedLabelRows.value) ? trackedLabelRows.value : [];
   return rows
-    .filter(r => String(r?.name || '').startsWith('handover_'))
+    .filter(r => {
+      const name = normalizeLabelKey(r?.name);
+      return name.startsWith('ly_do_handoff_') || name.startsWith('handover_');
+    })
     .sort((a, b) => (b.conversationsCount || 0) - (a.conversationsCount || 0))
     .slice(0, 5);
 });
@@ -153,18 +174,21 @@ const normalizeLabelSummary = summary => {
   });
 };
 
-const trackedLabelNames = computed(() => {
-  // Chỉ theo dõi các nhãn liên quan (đã bỏ ai_paused và khongtraloibangai)
-  return [
-    'ai_handoff',          // Chuyển nhân viên (đồng thời là dừng AI)
-    'ai_lead',             // Khách tiềm năng
-    'ai_lead_high',        // Khách tiềm năng (tốt)
-    'ai_lead_medium',      // Khách tiềm năng (trung bình)
-    'ai_lead_low',         // Khách tiềm năng (kém)
-    'ai_urgent',           // Ưu tiên gấp
-    'ai_upset',            // Khách bực / tiêu cực
-    'intent_booking_confirmed',  // AI chốt lịch thành công
-  ];
+const isAiTrackingLabel = labelName => {
+  const name = normalizeLabelKey(labelName);
+  if (!name) return false;
+  return true;
+};
+
+const summaryLabelCountByName = computed(() => {
+  const counts = {};
+  (labelSummary.value || []).forEach(row => {
+    const name = normalizeLabelKey(row?.name);
+    if (!name || !isAiTrackingLabel(name)) return;
+    const count = Number(row?.conversationsCount || row?.conversations_count || 0);
+    counts[name] = Number(counts[name] || 0) + count;
+  });
+  return counts;
 });
 
 const liveLabelCountByName = computed(() => {
@@ -177,7 +201,7 @@ const liveLabelCountByName = computed(() => {
     const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
     labels.forEach(label => {
       const normalizedLabel = normalizeLabelKey(label);
-      if (!trackedLabelNames.value.includes(normalizedLabel)) return;
+      if (!isAiTrackingLabel(normalizedLabel)) return;
       counts[normalizedLabel] = Number(counts[normalizedLabel] || 0) + 1;
     });
   });
@@ -186,29 +210,35 @@ const liveLabelCountByName = computed(() => {
 });
 
 const trackedLabelRows = computed(() => {
-  const map = new Map(
-    labelSummary.value.map(row => [normalizeLabelKey(row?.name), row])
-  );
-  return trackedLabelNames.value.map(name => {
-    const summaryCount = Number(map.get(name)?.conversationsCount || 0);
+  const allNames = new Set([
+    ...Object.keys(summaryLabelCountByName.value || {}),
+    ...Object.keys(liveLabelCountByName.value || {}),
+  ]);
+
+  return Array.from(allNames)
+    .filter(isAiTrackingLabel)
+    .map(name => {
+    const summaryCount = Number(summaryLabelCountByName.value[name] || 0);
     const liveCount = Number(liveLabelCountByName.value[name] || 0);
     return {
       name,
       conversationsCount: Math.max(summaryCount, liveCount),
     };
-  });
+    })
+    .filter(row => Number(row?.conversationsCount || 0) > 0)
+    .sort((a, b) => {
+      const countDiff = Number(b.conversationsCount || 0) - Number(a.conversationsCount || 0);
+      if (countDiff !== 0) return countDiff;
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    });
 });
 
 const handoverReasonDisplay = label => {
   const raw = String(label || '');
-  const key = raw.replace(/^handover_/, '').toLowerCase();
-  const map = {
-    khach_yeu_cau: 'Khách yêu cầu gặp người',
-    ngoai_pham_vi: 'Ngoài phạm vi AI',
-    sales_opportunity: 'Cơ hội chốt đơn',
-    negative_sentiment: 'Khách tiêu cực',
-  };
-  if (map[key]) return map[key];
+  const key = normalizeLabelKey(raw)
+    .replace(/^ly_do_handoff_/, '')
+    .replace(/^handover_/, '')
+    .toLowerCase();
   return key ? key.replace(/_/g, ' ') : raw;
 };
 
@@ -219,13 +249,17 @@ const toTitleCase = text => {
 };
 
 const formatUnknownLabelDisplay = rawLabel => {
-  const label = String(rawLabel || '').toLowerCase();
+  const label = normalizeLabelKey(rawLabel);
   if (!label) return '';
-  if (label.startsWith('handover_')) return handoverReasonDisplay(label);
+  if (label.startsWith('ly_do_handoff_') || label.startsWith('handover_')) {
+    return handoverReasonDisplay(label);
+  }
 
   const normalized = label
     .replace(/^ai_/, '')
     .replace(/^intent_/, '')
+    .replace(/^y_dinh_/, '')
+    .replace(/^ly_do_handoff_/, '')
     .replace(/_/g, ' ');
 
   return toTitleCase(normalized);
@@ -233,40 +267,15 @@ const formatUnknownLabelDisplay = rawLabel => {
 
 const labelDisplayName = name => {
   const normalizedName = normalizeLabelKey(name);
-  const map = {
-    intent_booking_confirmed: 'AI chốt lịch thành công',
-    ai_handoff: 'Chuyển nhân viên',           // Đồng thời là dừng AI
-    fai_handoff: 'Chuyển nhân viên',
-    ai_upset: 'Khách bực / tiêu cực',
-    ai_urgent: 'Ưu tiên gấp',
-    ai_lead: 'Khách tiềm năng',
-    ai_lead_high: 'Khách tiềm năng (tốt)',
-    ai_lead_medium: 'Khách tiềm năng (trung bình)',
-    ai_lead_low: 'Khách tiềm năng (kém)',
-    payment_collection: 'Thu thập thanh toán',
-    // Đã bỏ: ai_paused, khongtraloibangai (gộp vào ai_handoff)
-  };
-  return map[normalizedName] || formatUnknownLabelDisplay(normalizedName);
+  return formatUnknownLabelDisplay(normalizedName);
 };
 
 const labelTone = name => {
   const normalizedName = normalizeLabelKey(name);
-  if (normalizedName.startsWith('handover_')) return 'amber';
-
-  const map = {
-    intent_booking_confirmed: 'teal',
-    ai_handoff: 'ruby',
-    fai_handoff: 'ruby',
-    ai_upset: 'ruby',
-    ai_urgent: 'amber',
-    ai_lead: 'blue',
-    ai_lead_high: 'teal',
-    ai_lead_medium: 'amber',
-    ai_lead_low: 'ruby',
-    payment_collection: 'blue',
-    // Đã bỏ: ai_paused, khongtraloibangai (gộp vào ai_handoff)
-  };
-  return map[normalizedName] || 'slate';
+  if (!normalizedName) return 'slate';
+  const tones = ['slate', 'blue', 'teal', 'amber', 'ruby'];
+  const hash = Array.from(normalizedName).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return tones[hash % tones.length];
 };
 
 const formatPercent = value => {
@@ -294,7 +303,7 @@ const labelRoute = label => {
     name: 'label_conversations',
     params: {
       accountId: route.params.accountId,
-      label,
+      label: normalizeLabelKey(label),
     },
   };
 };
@@ -370,8 +379,8 @@ const fetchLabelSummary = async () => {
 const isRiskConversation = conversation => {
   const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
   const normalizedLabels = labels.map(label => normalizeLabelKey(label));
-  return normalizedLabels.includes('ai_urgent') ||
-    normalizedLabels.includes('ai_upset') ||
+  return normalizedLabels.includes('uu_tien_gap') ||
+    normalizedLabels.includes('cam_xuc_tieu_cuc') ||
     normalizedLabels.includes(HANDOFF_LABEL);
 };
 
@@ -651,7 +660,7 @@ onBeforeUnmount(() => {
               {{ aiAutomationText }}
             </div>
             <div class="mt-1 text-xs text-n-teal-11">
-              Tính theo nhãn: #intent_booking_confirmed
+              Tính theo nhãn: #{{ BOOKING_CONFIRMED_LABEL }}
             </div>
           </div>
 
@@ -718,7 +727,7 @@ onBeforeUnmount(() => {
 
           <div v-else-if="activeKpiTab === 'ai_resolved'" class="mt-4 grid gap-3">
             <div class="text-sm text-n-slate-12">
-              AI tự xử lý được tính khi hội thoại có nhãn <span class="font-medium">#intent_booking_confirmed</span>.
+              AI tự xử lý được tính khi hội thoại có nhãn <span class="font-medium">#{{ BOOKING_CONFIRMED_LABEL }}</span>.
             </div>
             <div class="grid gap-2 md:grid-cols-2">
               <div class="rounded-lg outline outline-1 outline-n-weak px-4 py-3">
@@ -727,10 +736,10 @@ onBeforeUnmount(() => {
               </div>
               <router-link
                 class="rounded-lg outline outline-1 outline-n-weak px-4 py-3 hover:underline"
-                :to="labelRoute('intent_booking_confirmed')"
+                :to="labelRoute(BOOKING_CONFIRMED_LABEL)"
               >
                 <div class="text-xs text-n-slate-11">Xem danh sách</div>
-                <div class="text-sm font-medium text-n-slate-12">Danh sách hội thoại #intent_booking_confirmed</div>
+                <div class="text-sm font-medium text-n-slate-12">Danh sách hội thoại #{{ BOOKING_CONFIRMED_LABEL }}</div>
               </router-link>
             </div>
           </div>
