@@ -123,7 +123,21 @@ class WebhookListener < BaseListener
   end
 
   def deliver_webhook_payloads(payload, inbox)
+    # Skip webhook dispatch entirely when this inbox has AI blocked
+    return if inbox_ai_blocked?(inbox)
+
     deliver_account_webhooks(payload, inbox.account)
     deliver_api_inbox_webhooks(payload, inbox)
+  end
+
+  def inbox_ai_blocked?(inbox)
+    return false unless inbox&.account_id && inbox&.id
+
+    key = "ai_control:blocked_inboxes:#{inbox.account_id}"
+    blocked_json = ::Redis::Alfred.get(key)
+    return false if blocked_json.blank?
+
+    blocked_ids = JSON.parse(blocked_json) rescue []
+    blocked_ids.include?(inbox.id.to_s)
   end
 end

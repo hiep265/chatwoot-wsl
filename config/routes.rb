@@ -92,6 +92,12 @@ Rails.application.routes.draw do
             end
           end
           post 'ai_control/train_faq', to: 'ai_control#train_faq'
+          get 'ai_control/payment_review_cases', to: 'ai_control#payment_review_cases'
+          post 'ai_control/payment_review_cases/:case_id/review', to: 'ai_control#review_payment_review_case'
+          get 'ai_control/blocked_inboxes', to: 'ai_control#blocked_inboxes'
+          post 'ai_control/blocked_inboxes', to: 'ai_control#block_inbox'
+          delete 'ai_control/blocked_inboxes', to: 'ai_control#unblock_inbox'
+          post 'ai_control/blocked_inboxes/toggle_all', to: 'ai_control#toggle_all_inboxes'
           resource :saml_settings, only: [:show, :create, :update, :destroy]
           resources :agent_bots, only: [:index, :create, :show, :update, :destroy] do
             delete :avatar, on: :member
