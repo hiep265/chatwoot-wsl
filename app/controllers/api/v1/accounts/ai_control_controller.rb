@@ -28,6 +28,7 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     body = parse_json_body(response.body)
 
     if status.between?(200, 299)
+      Rails.logger.info("[AiControl] FAQ Success: #{body.inspect}")
       render json: body, status: :ok
       return
     end
@@ -250,6 +251,7 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
   def normalize_review_status(value)
     requested = value.to_s.strip
     return 'payment_review_pending' if requested.blank?
+    return nil if requested == 'all'
 
     allowed = %w[
       payment_review_pending

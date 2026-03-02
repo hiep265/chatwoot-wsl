@@ -16,6 +16,8 @@ import ConversationView from '../../conversation/ConversationView.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 
+import AddLabel from '../../settings/labels/AddLabel.vue';
+
 import { useAlert } from 'dashboard/composables';
 import { emitter } from 'shared/helpers/mitt';
 
@@ -51,25 +53,66 @@ const paymentReviewTotal = ref(0);
 const paymentReviewCount = ref(0);
 const isPaymentReviewLoading = ref(false);
 const paymentReviewSegment = ref('all');
-const paymentReviewLimit = ref(50);
+const paymentReviewLimit = ref(20);
+const paymentReviewOffset = ref(0);
+const paymentReviewHasMore = ref(true);
 const paymentReviewLastError = ref('');
 const paymentReviewActionLoading = ref(new Set());
+const isPaymentReviewLoadingMore = ref(false);
+
+const paymentReviewTableContainer = ref(null);
+
+// Sorted payment cases: pending (chờ xác nhận) first
+const sortedPaymentReviewCases = computed(() => {
+  const cases = Array.isArray(paymentReviewCases.value) ? paymentReviewCases.value : [];
+  return [...cases].sort((a, b) => {
+    const statusA = String(a?.review_status || '').toLowerCase();
+    const statusB = String(b?.review_status || '').toLowerCase();
+    const isPendingA = !statusA.includes('verified') && !statusA.includes('rejected');
+    const isPendingB = !statusB.includes('verified') && !statusB.includes('rejected');
+    if (isPendingA && !isPendingB) return -1;
+    if (!isPendingA && isPendingB) return 1;
+    return 0;
+  });
+});
+
+const showMetadataModal = ref(false);
+const selectedMetadataItem = ref(null);
+
+const openMetadataModal = (item) => {
+  selectedMetadataItem.value = item;
+  showMetadataModal.value = true;
+};
+
+const closeMetadataModal = () => {
+  showMetadataModal.value = false;
+  selectedMetadataItem.value = null;
+};
 
 // Chỉ dùng ai_handoff để đánh dấu cả chuyển nhân viên và dừng AI
 const HANDOFF_LABEL = 'ai_handoff';
-const BOOKING_CONFIRMED_LABEL = 'y_dinh_dat_lich_xac_nhan';
+const BOOKING_CONFIRMED_LABEL = 'ý_định_đặt_lịch_xác_nhận';
 const LABEL_ALIASES = {
   fai_handoff: HANDOFF_LABEL,
   intent_booking_confirmed: BOOKING_CONFIRMED_LABEL,
-  ai_upset: 'cam_xuc_tieu_cuc',
-  ai_urgent: 'uu_tien_gap',
-  ai_lead: 'khach_tiem_nang',
-  ai_lead_high: 'khach_tiem_nang_cao',
-  ai_lead_medium: 'khach_tiem_nang_trung_binh',
-  ai_lead_low: 'khach_tiem_nang_thap',
-  payment_collection: 'thu_thap_thanh_toan',
-  handover_sales_opportunity: 'ly_do_handoff_co_hoi_chot_don',
-  handover_negative_sentiment: 'ly_do_handoff_khach_tieu_cuc',
+  ai_upset: 'cảm_xúc_tiêu_cực',
+  ai_urgent: 'ưu_tiên_gấp',
+  ai_lead: 'khách_tiềm_năng',
+  ai_lead_high: 'khách_tiềm_năng_cao',
+  ai_lead_medium: 'khách_tiềm_năng_trung_bình',
+  ai_lead_low: 'khách_tiềm_năng_thấp',
+  payment_collection: 'thu_thập_thanh_toán',
+  handover_sales_opportunity: 'lý_do_handoff_cơ_hội_chốt_đơn',
+  handover_negative_sentiment: 'lý_do_handoff_khách_tiêu_cực',
+  // Legacy ASCII -> diacritics
+  khach_moi: 'khách_mới',
+  khach_quay_lai: 'khách_quay_lại',
+  can_theo_doi: 'cần_theo_dõi',
+  off_topic: 'ngoài_chủ_đề',
+  y_dinh_dat_lich_xac_nhan: 'ý_định_đặt_lịch_xác_nhận',
+  payment_review_pending: 'chờ_xét_thanh_toán',
+  cam_xuc_tieu_cuc: 'cảm_xúc_tiêu_cực',
+  uu_tien_gap: 'ưu_tiên_gấp',
 };
 
 const normalizeLabelKey = label => {
@@ -98,6 +141,12 @@ const isRiskBannerVisible = ref(false);
 const isRiskBannerBlinking = ref(false);
 const riskBannerText = ref('');
 const riskAudio = ref(null);
+
+// Label management state
+const showAddLabelPopup = ref(false);
+const showDeleteLabelPopup = ref(false);
+const selectedLabelToDelete = ref(null);
+const isDeletingLabel = ref(false);
 const aiControlConversationId = computed(
   () => route.params.conversation_id || 0
 );
@@ -138,18 +187,27 @@ const trackedLabelCount = labelName => {
   return Number(row?.conversationsCount || 0);
 };
 
-const aiAutomationText = computed(() => {
-  const total = Number(labelOverviewTotal.value || 0);
-  const resolved = trackedLabelCount(BOOKING_CONFIRMED_LABEL);
-  const rate = total ? Math.round((resolved / total) * 100) : 0;
-  return `${formatCount(resolved)} (${rate}%)`;
+const newClientsCount = computed(() => {
+  return trackedLabelCount('khách_mới');
 });
 
-const aiHandoffText = computed(() => {
+const returnClientsCount = computed(() => {
+  return trackedLabelCount('khách_quay_lại');
+});
+
+const closeCount = computed(() => {
+  return trackedLabelCount('ý_định_đặt_lịch_xác_nhận');
+});
+
+const closeRateText = computed(() => {
   const total = Number(labelOverviewTotal.value || 0);
-  const handoff = trackedLabelCount('ai_handoff');
-  const rate = total ? Math.round((handoff / total) * 100) : 0;
-  return `${formatCount(handoff)} (${rate}%)`;
+  if (!total) return '0%';
+  const closed = closeCount.value;
+  return Math.round((closed / total) * 100) + '%';
+});
+
+const followUpCount = computed(() => {
+  return trackedLabelCount('cần_theo_dõi');
 });
 
 const formatDate = timestamp => {
@@ -499,7 +557,18 @@ const confirmPaymentCase = async item => {
       throw new Error(String(message));
     }
 
-    useAlert('Đã xác nhận thanh toán và kích hoạt luồng hậu thanh toán.');
+    // Check kimi skill response
+    const skillResult = result?.post_payment_skill || {};
+    if (skillResult?.triggered && !skillResult?.error) {
+      useAlert('Đã xác nhận thanh toán — Kimi đã gửi phản hồi cho khách.');
+    } else if (skillResult?.error) {
+      useAlert(
+        `Đã xác nhận thanh toán nhưng Kimi gặp lỗi: ${skillResult.error}`
+      );
+    } else {
+      useAlert('Đã xác nhận thanh toán (chưa gửi phản hồi tự động).');
+    }
+
     await fetchPaymentReviewCases();
 
     if (String(item?.conversation_id || '').trim()) {
@@ -778,8 +847,11 @@ const fetchLiveConversations = async () => {
   }
 };
 
-const fetchPaymentReviewCases = async () => {
-  isPaymentReviewLoading.value = true;
+const fetchPaymentReviewCases = async (loadMore = false) => {
+  isPaymentReviewLoading.value = !loadMore;
+  if (loadMore) {
+    isPaymentReviewLoadingMore.value = true;
+  }
   paymentReviewLastError.value = '';
 
   try {
@@ -788,27 +860,58 @@ const fetchPaymentReviewCases = async () => {
         ? undefined
         : paymentReviewSegment.value;
     const response = await AiControlAPI.listPaymentReviewCases({
-      reviewStatus: 'payment_review_pending',
+      reviewStatus: 'all',
       segment,
       limit: paymentReviewLimit.value,
-      offset: 0,
+      offset: loadMore ? paymentReviewOffset.value : 0,
     });
 
     const data = response?.data || {};
     const rows = Array.isArray(data?.cases) ? data.cases : [];
-    paymentReviewCases.value = rows;
-    paymentReviewTotal.value = Number(data?.total || rows.length || 0);
-    paymentReviewCount.value = Number(data?.count || rows.length || 0);
+    
+    if (loadMore) {
+      paymentReviewCases.value = [...paymentReviewCases.value, ...rows];
+    } else {
+      paymentReviewCases.value = rows;
+    }
+
+    paymentReviewTotal.value = Number(data?.total || paymentReviewCases.value.length || 0);
+    paymentReviewCount.value = paymentReviewCases.value.length;
+    
+    paymentReviewHasMore.value = rows.length === paymentReviewLimit.value;
+    if (paymentReviewHasMore.value) {
+      paymentReviewOffset.value += paymentReviewLimit.value;
+    }
+
   } catch (e) {
-    paymentReviewCases.value = [];
-    paymentReviewTotal.value = 0;
-    paymentReviewCount.value = 0;
+    if (!loadMore) {
+      paymentReviewCases.value = [];
+      paymentReviewTotal.value = 0;
+      paymentReviewCount.value = 0;
+    }
     paymentReviewLastError.value =
       'Không tải được danh sách chờ xác minh thanh toán.';
     useAlert(paymentReviewLastError.value);
   } finally {
     isPaymentReviewLoading.value = false;
+    isPaymentReviewLoadingMore.value = false;
   }
+};
+
+const handleTableScroll = (e) => {
+  const { scrollTop, clientHeight, scrollHeight } = e.target;
+  if (scrollHeight - scrollTop - clientHeight < 50) {
+    if (!isPaymentReviewLoading.value && !isPaymentReviewLoadingMore.value && paymentReviewHasMore.value) {
+      fetchPaymentReviewCases(true);
+    }
+  }
+};
+
+const refreshPaymentReviewCases = () => {
+  paymentReviewOffset.value = 0;
+  paymentReviewHasMore.value = true;
+  paymentReviewCases.value = [];
+  fetchPaymentReviewCases(false);
 };
 
 const fetchAll = async () => {
@@ -893,6 +996,52 @@ const onRefreshLiveConversations = async () => {
 
 const openReportingDashboard = () => {
   window.open(reportingDashboardUrl.value, '_blank');
+};
+
+// Label management methods
+const openAddLabelPopup = () => {
+  showAddLabelPopup.value = true;
+};
+
+const closeAddLabelPopup = () => {
+  showAddLabelPopup.value = false;
+};
+
+const openDeleteLabelPopup = label => {
+  selectedLabelToDelete.value = label;
+  showDeleteLabelPopup.value = true;
+};
+
+const closeDeleteLabelPopup = () => {
+  showDeleteLabelPopup.value = false;
+  selectedLabelToDelete.value = null;
+};
+
+const deleteLabel = async () => {
+  if (!selectedLabelToDelete.value?.id) return;
+  isDeletingLabel.value = true;
+  try {
+    await store.dispatch('labels/delete', selectedLabelToDelete.value.id);
+    useAlert('Đã xóa nhãn thành công.');
+    closeDeleteLabelPopup();
+  } catch (error) {
+    const message =
+      error?.message || 'Không thể xóa nhãn.';
+    useAlert(message);
+  } finally {
+    isDeletingLabel.value = false;
+  }
+};
+
+const labelRecords = computed(() => {
+  return store.getters['labels/getLabels'] || [];
+});
+
+const findLabelByTitle = labelTitle => {
+  const normalized = normalizeLabelKey(labelTitle);
+  return labelRecords.value.find(
+    label => normalizeLabelKey(label.title) === normalized
+  );
 };
 
 // ── Chart.js integration ──
@@ -1002,6 +1151,7 @@ onMounted(() => {
   fetchPaymentReviewCases();
   fetchBlockedInboxes();
   store.dispatch('inboxes/get');
+  store.dispatch('labels/get');
   emitter.on(
     'ai_control_panel:refresh_live_conversations',
     onRefreshLiveConversations
@@ -1144,17 +1294,20 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </div>
-              <div class="overflow-x-auto">
+              <div ref="paymentReviewTableContainer" class="overflow-x-auto overflow-y-auto max-h-[32rem]" @scroll="handleTableScroll">
                 <table class="min-w-full divide-y divide-n-slate-3">
                   <thead class="bg-n-solid-2/50 backdrop-blur-sm">
                     <tr
                       class="text-left text-xs font-semibold uppercase tracking-wider text-n-slate-11"
                     >
                       <th class="px-6 py-3">Khách hàng</th>
+                      <th class="px-6 py-3">Thông tin liên hệ</th>
+                      <th class="px-6 py-3">Địa chỉ/Giao hàng</th>
                       <th class="px-6 py-3">Hạng mục mua</th>
                       <th class="px-6 py-3">Số item</th>
                       <th class="px-6 py-3">Giá trị dự kiến</th>
                       <th class="px-6 py-3">Ghi chú</th>
+                      <th class="px-6 py-3">Thông tin đơn hàng</th>
                       <th class="px-6 py-3">Trạng thái</th>
                       <th class="px-6 py-3 text-right">Thao tác</th>
                     </tr>
@@ -1193,7 +1346,7 @@ onBeforeUnmount(() => {
                     </tr>
                     <template v-else>
                       <tr
-                        v-for="item in paymentReviewCases"
+                        v-for="item in sortedPaymentReviewCases"
                         :key="item.id"
                         class="group align-middle cursor-pointer transition-colors hover:bg-n-slate-2/50"
                         @click="openPaymentConversation(item)"
@@ -1220,6 +1373,16 @@ onBeforeUnmount(() => {
                               </div>
                             </div>
                           </div>
+                        </td>
+                        <td class="px-6 py-4">
+                          <div class="text-sm text-n-slate-12">
+                            <div v-if="item.metadata?.phone || item.metadata?.contact_phone">📞 {{ item.metadata?.phone || item.metadata?.contact_phone }}</div>
+                            <div v-if="item.metadata?.email || item.metadata?.contact_email">✉️ {{ item.metadata?.email || item.metadata?.contact_email }}</div>
+                            <div v-if="!item.metadata?.phone && !item.metadata?.contact_phone && !item.metadata?.email && !item.metadata?.contact_email" class="text-n-slate-10 italic">Không có</div>
+                          </div>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-n-slate-12 max-w-[200px] truncate" :title="item.metadata?.address || item.metadata?.shipping_address || '--'">
+                          {{ item.metadata?.address || item.metadata?.shipping_address || '--' }}
                         </td>
                         <td class="px-6 py-4">
                           <div class="flex flex-wrap gap-2">
@@ -1250,14 +1413,65 @@ onBeforeUnmount(() => {
                           {{ paymentNoteText(item) }}
                         </td>
                         <td class="px-6 py-4">
+                          <div class="flex flex-col gap-1.5 max-w-[220px]">
+                            <div class="text-xs text-n-slate-12 space-y-1">
+                              <div v-if="item.items && item.items.length" class="font-medium">
+                                {{ item.items.length }} sản phẩm
+                              </div>
+                              <div v-else-if="item.item_count" class="font-medium">
+                                {{ item.item_count }} item(s)
+                              </div>
+                              <div v-if="item.metadata?.order_items?.length" class="text-n-slate-11 line-clamp-2">
+                                {{ item.metadata.order_items.map(oi => oi.sku || oi.name || oi.segment).filter(Boolean).join(', ') || 'Đơn hàng' }}
+                              </div>
+                              <div v-else-if="item.metadata?.product_name" class="text-n-slate-11 line-clamp-2">
+                                {{ item.metadata.product_name }}
+                              </div>
+                              <div v-else-if="item.metadata?.items?.length" class="text-n-slate-11 line-clamp-2">
+                                {{ item.metadata.items.map(i => i.name || i.sku).filter(Boolean).join(', ') || 'Đơn hàng' }}
+                              </div>
+                              <div v-else-if="item.metadata?.order_code || item.metadata?.order_id" class="text-n-slate-11">
+                                Mã: {{ item.metadata.order_code || item.metadata.order_id }}
+                              </div>
+                              <div v-else class="text-n-slate-10 italic text-[11px]">
+                                Không có thông tin
+                              </div>
+                            </div>
+                            <button
+                              v-if="item.metadata && Object.keys(item.metadata).length > 0"
+                              @click.stop="openMetadataModal(item)"
+                              class="text-n-blue-11 hover:text-n-blue-12 hover:underline text-[11px] font-medium w-fit"
+                            >
+                              Xem chi tiết
+                            </button>
+                          </div>
+                        </td>
+                        <td class="px-6 py-4">
                           <span
-                            class="inline-flex items-center rounded-full bg-n-amber-3 px-2.5 py-1 text-xs font-semibold text-n-amber-12 ring-1 ring-inset ring-n-amber-5"
+                            class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset"
+                            :class="
+                              (item.review_status || '').includes('verified')
+                                ? 'bg-n-teal-3 text-n-teal-12 ring-n-teal-5'
+                                : (item.review_status || '').includes('rejected')
+                                  ? 'bg-n-ruby-3 text-n-ruby-12 ring-n-ruby-5'
+                                  : 'bg-n-amber-3 text-n-amber-12 ring-n-amber-5'
+                            "
                           >
-                            {{ item.review_status || 'payment_review_pending' }}
+                            {{
+                              (item.review_status || '').includes('verified')
+                                ? '✅ Đã xác nhận'
+                                : (item.review_status || '').includes('rejected')
+                                  ? '❌ Từ chối'
+                                  : '⏳ Chờ xác nhận'
+                            }}
                           </span>
                         </td>
                         <td class="px-6 py-4 text-right">
                           <Button
+                            v-if="
+                              !(item.review_status || '').includes('verified') &&
+                              !(item.review_status || '').includes('rejected')
+                            "
                             color="teal"
                             size="sm"
                             class="h-8 shadow-sm transition-transform active:scale-95"
@@ -1265,18 +1479,116 @@ onBeforeUnmount(() => {
                             :is-loading="isPaymentCaseActionLoading(item.id)"
                             @click.stop="confirmPaymentCase(item)"
                           />
+                          <span
+                            v-else
+                            class="text-xs text-n-slate-10"
+                          >
+                            {{ paymentContactName(item) }}
+                          </span>
                         </td>
                       </tr>
                     </template>
+                    <!-- Loading Indicator for Infinite Scroll -->
+                    <tr v-if="isPaymentReviewLoadingMore">
+                      <td colspan="10" class="py-4 text-center text-sm text-n-slate-11">
+                        <div class="flex items-center justify-center gap-2">
+                          <div class="w-4 h-4 rounded-full border-2 border-n-blue-9 border-t-transparent animate-spin"></div>
+                          Đang tải thêm...
+                        </div>
+                      </td>
+                    </tr>
+                    <tr v-if="!paymentReviewHasMore && paymentReviewCases.length > 0">
+                      <td colspan="10" class="py-4 text-center text-xs text-n-slate-10 italic border-t border-n-slate-3">
+                        Đã tải hết danh sách
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
               <div
-                class="px-6 py-4 border-t border-n-slate-3 bg-n-solid-2/50 text-xs font-medium text-n-slate-11"
+                class="px-6 py-4 border-t border-n-slate-3 bg-n-solid-2/50 flex justify-between items-center text-xs font-medium text-n-slate-11"
               >
-                Hiển thị {{ paymentReviewCount.toLocaleString() }} bản ghi.
+                <span>Đang hiển thị {{ paymentReviewCases.length }} / {{ paymentReviewCount.toLocaleString() }} bản ghi.</span>
+                <span v-if="isPaymentReviewLoadingMore" class="text-n-blue-11 animate-pulse">Đang rải thêm...</span>
               </div>
             </div>
+
+            <!-- Metadata Detail Modal -->
+            <woot-modal :show.sync="showMetadataModal" :on-close="closeMetadataModal">
+              <div class="p-6 max-w-lg">
+                <h3 class="text-lg font-semibold text-n-slate-12 mb-4">Chi tiết đơn hàng</h3>
+                <div v-if="selectedMetadataItem" class="space-y-5">
+                  <!-- Thông tin người mua -->
+                  <div class="bg-n-slate-2 rounded-xl p-4 border border-n-slate-4">
+                    <div class="text-xs font-bold uppercase text-n-slate-10 mb-3 tracking-wider flex items-center gap-2">
+                      <span>👤</span> Thông tin người mua
+                    </div>
+                    <div class="space-y-2 text-sm">
+                      <div class="flex justify-between">
+                        <span class="text-n-slate-11">Họ tên:</span>
+                        <span class="font-medium text-n-slate-12">{{ selectedMetadataItem.contact_name || selectedMetadataItem.metadata?.contact_name || selectedMetadataItem.metadata?.customer_name || '—' }}</span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-n-slate-11">Điện thoại:</span>
+                        <span class="font-medium text-n-slate-12">{{ selectedMetadataItem.metadata?.phone || selectedMetadataItem.metadata?.contact_phone || '—' }}</span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-n-slate-11">Email:</span>
+                        <span class="font-medium text-n-slate-12">{{ selectedMetadataItem.metadata?.email || selectedMetadataItem.metadata?.contact_email || '—' }}</span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-n-slate-11">Địa chỉ:</span>
+                        <span class="font-medium text-n-slate-12 text-right max-w-[200px]">{{ selectedMetadataItem.metadata?.address || selectedMetadataItem.metadata?.shipping_address || '—' }}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Thông tin đơn hàng -->
+                  <div class="bg-n-slate-2 rounded-xl p-4 border border-n-slate-4">
+                    <div class="text-xs font-bold uppercase text-n-slate-10 mb-3 tracking-wider flex items-center gap-2">
+                      <span>📦</span> Thông tin đơn hàng
+                    </div>
+                    <div class="space-y-3">
+                      <!-- Danh sách sản phẩm từ items hoặc order_items -->
+                      <div v-if="(selectedMetadataItem.items?.length || selectedMetadataItem.metadata?.order_items?.length)" class="space-y-2">
+                        <div
+                          v-for="(item, i) in (selectedMetadataItem.items || selectedMetadataItem.metadata?.order_items || [])"
+                          :key="i"
+                          class="bg-n-solid-1 rounded-lg p-3 border border-n-slate-3"
+                        >
+                          <div class="flex justify-between items-start mb-2">
+                            <span class="font-semibold text-n-slate-12">{{ item.sku || item.name || item.item_id || `Item ${i + 1}` }}</span>
+                            <span class="text-xs px-2 py-0.5 rounded bg-n-blue-3 text-n-blue-12">{{ item.segment || selectedMetadataItem.segment }}</span>
+                          </div>
+                          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-n-slate-11">
+                            <div v-if="item.quantity">Số lượng: <span class="font-medium text-n-slate-12">{{ item.quantity }}</span></div>
+                            <div v-if="item.unit_price">Đơn giá: <span class="font-medium text-n-slate-12">{{ item.unit_price }}</span></div>
+                            <div v-if="item.line_amount">Thành tiền: <span class="font-medium text-n-slate-12">{{ item.line_amount }}</span></div>
+                            <div v-if="item.fulfillment_status">Trạng thái: <span class="font-medium text-n-slate-12">{{ item.fulfillment_status }}</span></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div v-else class="text-sm text-n-slate-10 italic">Không có chi tiết sản phẩm</div>
+
+                      <!-- Tổng giá trị -->
+                      <div class="pt-3 border-t border-n-slate-3 flex justify-between items-center">
+                        <span class="text-sm font-medium text-n-slate-11">Tổng giá trị:</span>
+                        <span class="text-base font-bold text-n-slate-12">{{ selectedMetadataItem.expected_amount_total || selectedMetadataItem.expected_amount }} {{ selectedMetadataItem.currency }}</span>
+                      </div>
+
+                      <!-- Ghi chú đơn hàng -->
+                      <div v-if="selectedMetadataItem.note || selectedMetadataItem.metadata?.note" class="pt-2 text-sm">
+                        <span class="text-n-slate-11">Ghi chú:</span>
+                        <span class="text-n-slate-12 ml-1">{{ selectedMetadataItem.note || selectedMetadataItem.metadata?.note }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                  <Button @click="closeMetadataModal" label="Đóng" color="slate" variant="smooth" />
+                </div>
+              </div>
+            </woot-modal>
 
             <!-- ===== SECTION 2: Hội thoại (CHÍNH) + Sidebar tools ===== -->
             <div class="grid gap-6 lg:grid-cols-12 lg:items-start">
@@ -1409,25 +1721,44 @@ onBeforeUnmount(() => {
                     />
                     <div
                       v-if="faqTrainingReport"
-                      class="rounded-xl outline outline-1 outline-n-teal-4 bg-n-teal-2/50 px-4 py-3 text-xs text-n-slate-12 shadow-sm"
+                      class="rounded-xl outline outline-1 outline-n-teal-4 bg-n-teal-2/50 px-4 py-3 text-xs text-n-slate-12 shadow-sm flex flex-col gap-3"
                     >
-                      <div
-                        class="flex justify-between items-center pb-2 border-b border-n-teal-4/50 mb-2"
-                      >
-                        <span
-                          class="font-semibold text-n-teal-11 uppercase tracking-wider text-[10px]"
-                          >Trạng thái</span
+                      <div>
+                        <div
+                          class="flex justify-between items-center pb-2 border-b border-n-teal-4/50 mb-2"
                         >
-                        <span
-                          class="font-medium px-2 py-0.5 rounded bg-n-teal-3 text-n-teal-11"
-                          >{{ faqTrainingReport.status || '--' }}</span
-                        >
+                          <span
+                            class="font-semibold text-n-teal-11 uppercase tracking-wider text-[10px]"
+                            >Trạng thái</span
+                          >
+                          <span
+                            class="font-medium px-2 py-0.5 rounded bg-n-teal-3 text-n-teal-11"
+                            >{{ faqTrainingReport.status || '--' }}</span
+                          >
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 mt-2 font-medium">
+                          <div>Mới: <span class="text-n-blue-11">{{ Number(faqTrainingReport.published_count || 0).toLocaleString() }}</span></div>
+                          <div>Trùng: <span class="text-n-amber-11">{{ Number(faqTrainingReport.duplicate_count || 0).toLocaleString() }}</span></div>
+                          <div>Xung đột: <span class="text-n-ruby-11">{{ Number(faqTrainingReport.conflict_count || 0).toLocaleString() }}</span></div>
+                          <div>Lỗi: <span class="text-n-slate-11">{{ Number(faqTrainingReport.error_count || 0).toLocaleString() }}</span></div>
+                        </div>
                       </div>
-                      <div class="grid grid-cols-2 gap-2 mt-2 font-medium">
-                        <div>Mới: <span class="text-n-blue-11">{{ Number(faqTrainingReport.published_count || 0).toLocaleString() }}</span></div>
-                        <div>Trùng: <span class="text-n-amber-11">{{ Number(faqTrainingReport.duplicate_count || 0).toLocaleString() }}</span></div>
-                        <div>Xung đột: <span class="text-n-ruby-11">{{ Number(faqTrainingReport.conflict_count || 0).toLocaleString() }}</span></div>
-                        <div>Lỗi: <span class="text-n-slate-11">{{ Number(faqTrainingReport.error_count || 0).toLocaleString() }}</span></div>
+
+                      <div v-if="faqTrainingReport.published_items?.length" class="mt-2 flex flex-col gap-2">
+                        <div class="text-[10px] font-bold uppercase tracking-wider text-n-slate-11 mb-1">CÁC HỘI THOẠI FAQ ĐÃ HỌC</div>
+                        <div class="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
+                          <div
+                            v-for="item in faqTrainingReport.published_items"
+                            :key="item.id"
+                            class="bg-n-background outline outline-1 outline-n-slate-3 rounded-lg p-3 text-[11px] flex flex-col gap-1.5"
+                          >
+                            <div class="font-semibold text-n-blue-11 line-clamp-2" :title="item.question">Q: {{ item.question }}</div>
+                            <div class="text-n-slate-11 line-clamp-3" :title="item.answer">A: {{ item.answer }}</div>
+                            <div class="text-[9px] text-n-slate-10 mt-0.5 uppercase tracking-wider">
+                              Nguồn: {{ item.source_type }} · Trạng thái: {{ item.status }}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1451,47 +1782,50 @@ onBeforeUnmount(() => {
 
             <!-- KPI Cards (clickable) -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-              <router-link
-                class="rounded-2xl outline outline-1 outline-n-blue-4 bg-gradient-to-br from-n-blue-2 to-n-blue-3 shadow-sm p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
-                :to="labelRoute(BOOKING_CONFIRMED_LABEL)"
-              >
-                <div class="text-[10px] font-bold uppercase tracking-wider text-n-blue-11">Tổng lưu lượng</div>
-                <div class="mt-1 text-2xl font-bold text-n-blue-12">{{ trafficConversationCountText }}</div>
-                <div class="mt-2 text-[10px] text-n-blue-11/70">Click xem chi tiết →</div>
-              </router-link>
-
-              <router-link
-                class="rounded-2xl outline outline-1 outline-n-teal-4 bg-gradient-to-br from-n-teal-2 to-n-teal-3 shadow-sm p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
-                :to="labelRoute(BOOKING_CONFIRMED_LABEL)"
-              >
-                <div class="text-[10px] font-bold uppercase tracking-wider text-n-teal-11">AI tự xử lý</div>
-                <div class="mt-1 text-2xl font-bold text-n-teal-12">{{ aiAutomationText }}</div>
-                <div class="mt-2 text-[10px] text-n-teal-11/70">Nhãn #{{ BOOKING_CONFIRMED_LABEL }} →</div>
-              </router-link>
-
-              <router-link
-                class="rounded-2xl outline outline-1 outline-n-ruby-4 bg-gradient-to-br from-n-ruby-2 to-n-ruby-3 shadow-sm p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
-                :to="labelRoute('ai_handoff')"
-              >
-                <div class="text-[10px] font-bold uppercase tracking-wider text-n-ruby-11">Chuyển nhân viên</div>
-                <div class="mt-1 text-2xl font-bold text-n-ruby-12">{{ aiHandoffText }}</div>
-                <div class="mt-2 text-[10px] text-n-ruby-11/70">Nhãn #ai_handoff →</div>
-              </router-link>
-
               <div
                 class="rounded-2xl outline outline-1 outline-n-amber-4 bg-gradient-to-br from-n-amber-2 to-n-amber-3 shadow-sm p-5 cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md"
                 @click="activeMainTab = 'operations'"
               >
-                <div class="text-[10px] font-bold uppercase tracking-wider text-n-amber-11">Chờ thanh toán</div>
+                <div class="text-[10px] font-bold uppercase tracking-wider text-n-amber-11">Doanh thu chờ duyệt</div>
                 <div class="mt-1 text-2xl font-bold text-n-amber-12">{{ paymentTotalAmountText }}</div>
-                <div class="mt-2 text-[10px] text-n-amber-11/70">{{ paymentReviewTotal }} ca · Xem vận hành →</div>
+                <div class="mt-2 text-[10px] text-n-amber-11/70">{{ paymentReviewTotal }} ca thanh toán →</div>
               </div>
 
-              <div class="rounded-2xl outline outline-1 outline-n-slate-4 bg-gradient-to-br from-n-solid-2 to-n-slate-3 shadow-sm p-5">
-                <div class="text-[10px] font-bold uppercase tracking-wider text-n-slate-11">Tin nhắn Bot</div>
-                <div class="mt-1 text-2xl font-bold text-n-slate-12">{{ formatCount(botMessageCount) }}</div>
-                <div class="mt-2 text-[10px] text-n-slate-11/70">TB {{ averageBotMessagesPerConversation }} / hội thoại</div>
-              </div>
+              <router-link
+                class="rounded-2xl outline outline-1 outline-n-blue-4 bg-gradient-to-br from-n-blue-2 to-n-blue-3 shadow-sm p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
+                :to="labelRoute('khách_mới')"
+              >
+                <div class="text-[10px] font-bold uppercase tracking-wider text-n-blue-11">Khách mới</div>
+                <div class="mt-1 text-2xl font-bold text-n-blue-12">{{ newClientsCount.toLocaleString() }}</div>
+                <div class="mt-2 text-[10px] text-n-blue-11/70">Nhãn #khách_mới →</div>
+              </router-link>
+
+              <router-link
+                class="rounded-2xl outline outline-1 outline-n-teal-4 bg-gradient-to-br from-n-teal-2 to-n-teal-3 shadow-sm p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
+                :to="labelRoute('ý_định_đặt_lịch_xác_nhận')"
+              >
+                <div class="text-[10px] font-bold uppercase tracking-wider text-n-teal-11">Tỉ lệ chốt (Close Rate)</div>
+                <div class="mt-1 text-2xl font-bold text-n-teal-12">{{ closeRateText }}</div>
+                <div class="mt-2 text-[10px] text-n-teal-11/70">{{ closeCount }} ca chốt thành công →</div>
+              </router-link>
+
+              <router-link
+                class="rounded-2xl outline outline-1 outline-n-violet-4 bg-gradient-to-br from-n-violet-2 to-n-violet-3 shadow-sm p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
+                :to="labelRoute('khách_quay_lại')"
+              >
+                <div class="text-[10px] font-bold uppercase tracking-wider text-n-violet-11">Khách quay lại</div>
+                <div class="mt-1 text-2xl font-bold text-n-violet-12">{{ returnClientsCount.toLocaleString() }}</div>
+                <div class="mt-2 text-[10px] text-n-violet-11/70">Nhãn #khách_quay_lại →</div>
+              </router-link>
+
+              <router-link
+                class="rounded-2xl outline outline-1 outline-n-ruby-4 bg-gradient-to-br from-n-ruby-2 to-n-ruby-3 shadow-sm p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
+                :to="labelRoute('cần_theo_dõi')"
+              >
+                <div class="text-[10px] font-bold uppercase tracking-wider text-n-ruby-11">Khách cần dặn / Nhắc lịch</div>
+                <div class="mt-1 text-2xl font-bold text-n-ruby-12">{{ followUpCount.toLocaleString() }}</div>
+                <div class="mt-2 text-[10px] text-n-ruby-11/70">Nhãn #cần_theo_dõi →</div>
+              </router-link>
             </div>
 
             <!-- Charts -->
@@ -1533,21 +1867,40 @@ onBeforeUnmount(() => {
 
               <!-- Label Detail Table (clickable) -->
               <div class="rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm overflow-hidden">
-                <div class="px-5 py-4 border-b border-n-slate-3 bg-n-solid-2">
-                  <div class="text-sm font-semibold text-n-slate-12 flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-n-slate-9 inline-block"></span>
-                    Chi tiết nhãn AI
+                <div class="px-5 py-4 border-b border-n-slate-3 bg-n-solid-2 flex items-center justify-between">
+                  <div>
+                    <div class="text-sm font-semibold text-n-slate-12 flex items-center gap-2">
+                      <span class="w-2 h-2 rounded-full bg-n-slate-9 inline-block"></span>
+                      Chi tiết nhãn AI
+                    </div>
+                    <div class="mt-0.5 text-[10px] text-n-slate-11">Hệ thống sẽ tự động học các nhãn tùy chỉnh bạn thêm</div>
                   </div>
-                  <div class="mt-0.5 text-[10px] text-n-slate-11">Click vào nhãn để xem hội thoại</div>
+                  <div class="flex items-center gap-2">
+                    <button
+                      class="flex items-center gap-1 text-[10px] font-semibold text-n-teal-11 bg-n-teal-2 px-2.5 py-1.5 rounded-lg outline outline-1 outline-n-teal-4 hover:bg-n-teal-3 transition-colors uppercase tracking-wide"
+                      @click="openAddLabelPopup"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                      THÊM NHÃN
+                    </button>
+                    <router-link
+                      :to="{ name: 'labels_list', params: { accountId: route.params.accountId } }"
+                      class="flex items-center gap-1 text-[10px] font-semibold text-n-blue-11 bg-n-blue-2 px-2.5 py-1.5 rounded-lg outline outline-1 outline-n-blue-4 hover:bg-n-blue-3 transition-colors uppercase tracking-wide"
+                    >
+                      QUẢN LÝ
+                    </router-link>
+                  </div>
                 </div>
                 <div class="p-4 flex flex-col gap-2 max-h-80 overflow-y-auto">
-                  <router-link
+                  <div
                     v-for="row in trackedLabelRows"
                     :key="row.name"
                     class="flex items-center justify-between rounded-xl outline outline-1 outline-n-slate-3 bg-n-solid-2 px-4 py-3 transition-all hover:bg-n-slate-3 hover:outline-n-blue-4 group cursor-pointer"
-                    :to="labelRoute(row.name)"
                   >
-                    <div class="flex flex-col gap-1 min-w-0 flex-1">
+                    <router-link
+                      class="flex flex-col gap-1 min-w-0 flex-1"
+                      :to="labelRoute(row.name)"
+                    >
                       <div class="text-xs font-semibold text-n-slate-12 group-hover:text-n-blue-11 transition-colors truncate">
                         {{ labelDisplayName(row.name) }}
                       </div>
@@ -1569,11 +1922,22 @@ onBeforeUnmount(() => {
                           {{ labelPercent(row) }}%
                         </div>
                       </div>
+                    </router-link>
+                    <div class="flex items-center gap-2 ml-3">
+                      <div class="text-sm font-bold text-n-slate-11 bg-n-slate-3 px-2.5 py-1 rounded-lg">
+                        {{ row.conversationsCount.toLocaleString() }}
+                      </div>
+                      <button
+                        v-if="findLabelByTitle(row.name)"
+                        v-tooltip.top="'Xóa nhãn này'"
+                        class="p-1.5 rounded-lg text-n-ruby-11 bg-n-ruby-2/50 opacity-0 group-hover:opacity-100 hover:bg-n-ruby-3 transition-all"
+                        :disabled="isDeletingLabel"
+                        @click.stop="openDeleteLabelPopup(findLabelByTitle(row.name))"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
+                      </button>
                     </div>
-                    <div class="ml-3 text-sm font-bold text-n-slate-11 bg-n-slate-3 px-2.5 py-1 rounded-lg">
-                      {{ row.conversationsCount.toLocaleString() }}
-                    </div>
-                  </router-link>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1581,5 +1945,22 @@ onBeforeUnmount(() => {
         </template>
       </div>
     </div>
+    <!-- Add Label Modal -->
+    <woot-modal v-model:show="showAddLabelPopup" :on-close="closeAddLabelPopup">
+      <AddLabel @close="closeAddLabelPopup" />
+    </woot-modal>
+
+    <!-- Delete Label Confirmation Modal -->
+    <woot-delete-modal
+      v-model:show="showDeleteLabelPopup"
+      :on-close="closeDeleteLabelPopup"
+      :on-confirm="deleteLabel"
+      :title="'Xác nhận xóa nhãn'"
+      :message="'Bạn có chắc chắn muốn xóa nhãn'"
+      :message-value="selectedLabelToDelete ? ` ${selectedLabelToDelete.title}?` : '?'"
+      :confirm-text="'Xóa'"
+      :reject-text="'Hủy'"
+      :is-loading="isDeletingLabel"
+    />
   </div>
 </template>

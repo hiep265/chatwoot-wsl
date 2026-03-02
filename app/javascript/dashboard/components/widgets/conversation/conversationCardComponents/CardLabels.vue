@@ -22,6 +22,16 @@ const AI_CONTROL_ROUTE_NAMES = [
 const HANDOFF_LABEL = 'ai_handoff';
 const LABEL_ALIASES = {
   fai_handoff: HANDOFF_LABEL,
+  // Legacy ASCII -> diacritics
+  khach_moi: 'khách_mới',
+  khach_quay_lai: 'khách_quay_lại',
+  can_theo_doi: 'cần_theo_dõi',
+  off_topic: 'ngoài_chủ_đề',
+  y_dinh_dat_lich_xac_nhan: 'ý_định_đặt_lịch_xác_nhận',
+  cam_xuc_tieu_cuc: 'cảm_xúc_tiêu_cực',
+  uu_tien_gap: 'ưu_tiên_gấp',
+  ai_upset: 'cảm_xúc_tiêu_cực',
+  ai_urgent: 'ưu_tiên_gấp',
 };
 
 const isAiControlMode = computed(() => {
@@ -40,12 +50,17 @@ const toTitleCase = text => {
 };
 
 const handoverReasonDisplay = label => {
-  const key = String(label || '').replace(/^handover_/, '').toLowerCase();
+  const key = String(label || '').replace(/^handover_/, '').replace(/^lý_do_handoff_/, '').toLowerCase();
   const map = {
-    khach_yeu_cau: 'Khách yêu cầu gặp người',
-    ngoai_pham_vi: 'Ngoài phạm vi AI',
-    sales_opportunity: 'Cơ hội chốt đơn',
-    negative_sentiment: 'Khách tiêu cực',
+    'khách_yêu_cầu': 'Khách yêu cầu gặp người',
+    'khach_yeu_cau': 'Khách yêu cầu gặp người',
+    'ngoài_phạm_vi': 'Ngoài phạm vi AI',
+    'ngoai_pham_vi': 'Ngoài phạm vi AI',
+    'cơ_hội_chốt_đơn': 'Cơ hội chốt đơn',
+    'sales_opportunity': 'Cơ hội chốt đơn',
+    'khách_tiêu_cực': 'Khách tiêu cực',
+    'negative_sentiment': 'Khách tiêu cực',
+    'xác_nhận_thanh_toán': 'Xác nhận thanh toán',
   };
   return map[key] || (key ? key.replace(/_/g, ' ') : '');
 };
@@ -53,24 +68,31 @@ const handoverReasonDisplay = label => {
 const aiLabelDisplayName = rawLabel => {
   const label = normalizeLabelKey(rawLabel);
   const map = {
-    intent_booking_confirmed: 'AI chốt lịch thành công',
-    ai_handoff: 'Chuyển nhân viên',
-    ai_upset: 'Khách bực / tiêu cực',
-    ai_urgent: 'Ưu tiên gấp',
-    ai_lead: 'Khách tiềm năng',
-    ai_lead_high: 'Khách tiềm năng (tốt)',
-    ai_lead_medium: 'Khách tiềm năng (trung bình)',
-    ai_lead_low: 'Khách tiềm năng (kém)',
-    payment_collection: 'Thu thập thanh toán',
+    'ý_định_đặt_lịch_xác_nhận': 'AI chốt lịch thành công',
+    'intent_booking_confirmed': 'AI chốt lịch thành công',
+    'ai_handoff': 'Chuyển nhân viên',
+    'cảm_xúc_tiêu_cực': 'Khách bực / tiêu cực',
+    'ưu_tiên_gấp': 'Ưu tiên gấp',
+    'khách_tiềm_năng': 'Khách tiềm năng',
+    'khách_tiềm_năng_cao': 'Khách tiềm năng (tốt)',
+    'khách_tiềm_năng_trung_bình': 'Khách tiềm năng (trung bình)',
+    'khách_tiềm_năng_thấp': 'Khách tiềm năng (kém)',
+    'thu_thập_thanh_toán': 'Thu thập thanh toán',
+    'khách_mới': 'Khách mới',
+    'khách_quay_lại': 'Khách quay lại',
+    'cần_theo_dõi': 'Cần theo dõi',
+    'ngoài_chủ_đề': 'Ngoài chủ đề',
+    'chờ_xét_thanh_toán': 'Chờ xét thanh toán',
   };
 
   if (map[label]) return map[label];
-  if (label.startsWith('handover_')) return handoverReasonDisplay(label);
+  if (label.startsWith('handover_') || label.startsWith('lý_do_handoff_')) return handoverReasonDisplay(label);
 
   return toTitleCase(
     label
       .replace(/^ai_/, '')
       .replace(/^intent_/, '')
+      .replace(/^ý_định_/, '')
       .replace(/_/g, ' ')
   );
 };

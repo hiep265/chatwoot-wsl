@@ -156,13 +156,13 @@ const isAiHumanMode = computed(() => {
 const isAiRiskConversation = computed(() => {
   const labels = normalizedConversationLabels.value;
   return labels.includes(HANDOFF_LABEL) ||
-    labels.includes('ai_upset') ||
-    labels.includes('ai_urgent');
+    labels.includes('cảm_xúc_tiêu_cực') ||
+    labels.includes('ưu_tiên_gấp');
 });
 
 const sentimentType = computed(() => {
   const labels = normalizedConversationLabels.value;
-  if (labels.includes('ai_upset')) return 'negative';
+  if (labels.includes('cảm_xúc_tiêu_cực')) return 'negative';
 
   const message = lastMessageInChat.value || {};
   const aiMetadata = message?.content_attributes?.ai_metadata;
