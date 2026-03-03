@@ -353,6 +353,14 @@ RSpec.describe Message do
 
       expect(conversation.reload.label_list).to include('ai_handoff')
     end
+
+    it 'removes handoff labels for outgoing echo messages (agent reply from platform)' do
+      conversation.update!(label_list: %w[ai_handoff ai_lead])
+
+      create(:message, conversation: conversation, message_type: :outgoing, sender: nil, source_id: 'fb_echo_12345')
+
+      expect(conversation.reload.label_list).to match_array(['ai_lead'])
+    end
   end
 
   describe '#waiting since' do

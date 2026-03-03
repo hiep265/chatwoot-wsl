@@ -323,8 +323,8 @@ class Message < ApplicationRecord
 
   def clear_handoff_labels_on_non_bot_message
     return if private?
-    return unless human_response?
-    return if bot_response?
+    return unless human_response? || outgoing_echo_from_platform?
+    return if bot_response? && !outgoing_echo_from_platform?
 
     current_labels = conversation.label_list.map(&:to_s)
     next_labels = current_labels.reject do |label|
@@ -366,6 +366,13 @@ class Message < ApplicationRecord
       content_attributes['automation_rule_id'].blank? &&
       additional_attributes['campaign_id'].blank? &&
       sender.is_a?(User)
+  end
+
+  # Echo messages from platforms (Instagram, Messenger, Facebook) are outgoing
+  # messages with no sender (nil) and a source_id from the platform.
+  # These occur when agents reply directly from the platform app on their phone.
+  def outgoing_echo_from_platform?
+    outgoing? && sender.nil? && !private? && source_id.present?
   end
 
   def bot_response?
