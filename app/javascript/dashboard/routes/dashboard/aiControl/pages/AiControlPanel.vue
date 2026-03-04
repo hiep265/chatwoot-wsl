@@ -1133,11 +1133,109 @@ const renderCharts = () => {
   }
 };
 
+// ── Comment Tab State ──
+const commentQueue = ref([]);
+const commentTotal = ref(0);
+const isCommentLoading = ref(false);
+const commentOffset = ref(0);
+const commentLimit = ref(50);
+const commentStatusFilter = ref('');
+const selectedCommentConversation = ref(null);
+const commentThread = ref([]);
+const isCommentThreadLoading = ref(false);
+const commentReplyText = ref('');
+const isCommentReplying = ref(false);
+const isCommentAutoReplying = ref(false);
+
+const fetchCommentQueue = async () => {
+  isCommentLoading.value = true;
+  try {
+    const response = await AiControlAPI.listComments({
+      status: commentStatusFilter.value || undefined,
+      limit: commentLimit.value,
+      offset: commentOffset.value,
+    });
+    const data = response?.data || {};
+    commentQueue.value = Array.isArray(data.comments) ? data.comments : [];
+    commentTotal.value = Number(data.total || 0);
+  } catch (e) {
+    commentQueue.value = [];
+    useAlert('Không tải được danh sách comment.');
+  } finally {
+    isCommentLoading.value = false;
+  }
+};
+
+const selectCommentConversation = async (item) => {
+  selectedCommentConversation.value = item;
+  isCommentThreadLoading.value = true;
+  commentReplyText.value = '';
+  try {
+    const response = await AiControlAPI.getCommentThread(item.conversation_id);
+    const data = response?.data || {};
+    commentThread.value = Array.isArray(data.messages) ? data.messages : [];
+  } catch (e) {
+    commentThread.value = [];
+    useAlert('Không tải được thread comment.');
+  } finally {
+    isCommentThreadLoading.value = false;
+  }
+};
+
+const sendCommentReply = async () => {
+  const text = commentReplyText.value.trim();
+  if (!text || !selectedCommentConversation.value) return;
+  isCommentReplying.value = true;
+  try {
+    await AiControlAPI.replyComment(selectedCommentConversation.value.conversation_id, { message: text });
+    commentReplyText.value = '';
+    useAlert('Đã gửi reply comment thành công.');
+    await selectCommentConversation(selectedCommentConversation.value);
+  } catch (e) {
+    useAlert('Không thể gửi reply comment.');
+  } finally {
+    isCommentReplying.value = false;
+  }
+};
+
+const triggerAutoReply = async (item) => {
+  const target = item || selectedCommentConversation.value;
+  if (!target) return;
+  isCommentAutoReplying.value = true;
+  try {
+    await AiControlAPI.autoReplyComment(target.conversation_id);
+    useAlert('Đã gửi yêu cầu auto-reply. AI sẽ phản hồi trong giây lát.');
+  } catch (e) {
+    useAlert('Không thể trigger auto-reply.');
+  } finally {
+    isCommentAutoReplying.value = false;
+  }
+};
+
+const commentTimeAgo = (iso) => {
+  if (!iso) return '';
+  try {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'vừa xong';
+    if (mins < 60) return `${mins} phút trước`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} giờ trước`;
+    const days = Math.floor(hours / 24);
+    return `${days} ngày trước`;
+  } catch {
+    return '';
+  }
+};
+
 watch(activeMainTab, async (tab) => {
   if (tab === 'reporting') {
     await loadChartJs();
     await nextTick();
     renderCharts();
+  }
+  if (tab === 'comment') {
+    await fetchCommentQueue();
   }
 });
 
@@ -1213,6 +1311,18 @@ onBeforeUnmount(() => {
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>
               <span>Báo cáo</span>
+            </button>
+            <button
+              class="flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold transition-all duration-200"
+              :class="
+                activeMainTab === 'comment'
+                  ? 'bg-n-background text-n-teal-11 shadow ring-1 ring-n-teal-4/50'
+                  : 'text-n-slate-11 hover:text-n-slate-12 hover:bg-n-slate-3/50'
+              "
+              @click="activeMainTab = 'comment'"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <span>Comment</span>
             </button>
           </div>
         </div>
@@ -1937,6 +2047,233 @@ onBeforeUnmount(() => {
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
                       </button>
                     </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- TAB: COMMENT -->
+        <template v-else-if="activeMainTab === 'comment'">
+          <div class="grid gap-6 lg:grid-cols-12 lg:items-start">
+            <!-- Comment Queue (Left) -->
+            <div class="lg:col-span-4 xl:col-span-4 self-start rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm overflow-hidden">
+              <div class="px-5 py-4 border-b border-n-slate-3 bg-n-solid-2">
+                <div class="flex items-center justify-between">
+                  <div class="text-base font-semibold text-n-slate-12">💬 Comment Queue</div>
+                  <div class="flex items-center gap-2">
+                    <select
+                      v-model="commentStatusFilter"
+                      class="h-8 rounded-lg outline outline-1 outline-n-weak bg-n-background px-2 text-xs font-medium text-n-slate-12"
+                      @change="fetchCommentQueue"
+                    >
+                      <option value="">Tất cả</option>
+                      <option value="open">Đang mở</option>
+                      <option value="pending">Chờ xử lý</option>
+                      <option value="resolved">Đã xử lý</option>
+                    </select>
+                    <button
+                      class="h-8 w-8 rounded-lg flex items-center justify-center bg-n-slate-3 hover:bg-n-slate-4 text-n-slate-11 transition-colors"
+                      @click="fetchCommentQueue"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="mt-1 text-xs text-n-slate-11">{{ commentTotal }} comment · {{ commentQueue.length }} hiển thị</div>
+              </div>
+
+              <div class="overflow-y-auto max-h-[52rem] divide-y divide-n-slate-3">
+                <!-- Loading -->
+                <div v-if="isCommentLoading" class="py-12 text-center text-sm text-n-slate-11">
+                  <div class="flex items-center justify-center gap-2">
+                    <div class="w-4 h-4 rounded-full border-2 border-n-teal-9 border-t-transparent animate-spin"></div>
+                    Đang tải...
+                  </div>
+                </div>
+
+                <!-- Empty -->
+                <div v-else-if="!commentQueue.length" class="py-12 text-center">
+                  <div class="text-3xl mb-2">💬</div>
+                  <div class="text-sm font-medium text-n-slate-12">Chưa có comment nào</div>
+                  <div class="mt-1 text-xs text-n-slate-11">Comment từ Instagram sẽ hiển thị ở đây</div>
+                </div>
+
+                <!-- Queue Items -->
+                <div
+                  v-for="item in commentQueue"
+                  :key="item.conversation_id"
+                  class="px-4 py-3 cursor-pointer transition-all hover:bg-n-slate-2/50"
+                  :class="selectedCommentConversation?.conversation_id === item.conversation_id ? 'bg-n-teal-2/50 border-l-2 border-n-teal-9' : ''"
+                  @click="selectCommentConversation(item)"
+                >
+                  <div class="flex items-start gap-3">
+                    <Avatar
+                      :name="item.contact_name || 'User'"
+                      :src="item.contact_avatar_url"
+                      :size="36"
+                      rounded-full
+                      class="ring-2 ring-white flex-shrink-0"
+                    />
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center justify-between">
+                        <span class="text-sm font-semibold text-n-slate-12 truncate">{{ item.contact_name || 'Người dùng' }}</span>
+                        <span class="text-[10px] text-n-slate-10 flex-shrink-0 ml-2">{{ commentTimeAgo(item.last_message_at) }}</span>
+                      </div>
+                      <div class="text-xs text-n-slate-11 mt-0.5 line-clamp-2">{{ item.last_message_content || '...' }}</div>
+                      <div class="flex items-center gap-2 mt-1.5">
+                        <span
+                          class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset"
+                          :class="
+                            item.platform === 'instagram'
+                              ? 'bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 ring-purple-200'
+                              : 'bg-n-blue-2 text-n-blue-11 ring-n-blue-4'
+                          "
+                        >
+                          {{ item.platform === 'instagram' ? '📸 IG' : '📘 FB' }}
+                        </span>
+                        <span class="text-[10px] text-n-slate-10">{{ item.messages_count }} tin nhắn</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Post Preview + Thread (Right) -->
+            <div class="lg:col-span-8 xl:col-span-8 self-start">
+              <!-- Empty State -->
+              <div v-if="!selectedCommentConversation" class="rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm p-12 text-center">
+                <div class="text-4xl mb-3">📱</div>
+                <div class="text-base font-semibold text-n-slate-12">Chọn một comment để xem</div>
+                <div class="mt-1 text-sm text-n-slate-11">Chọn comment từ danh sách bên trái để xem chi tiết</div>
+              </div>
+
+              <!-- Phone Mock Preview -->
+              <div v-else class="flex flex-col gap-4">
+                <!-- Post Card -->
+                <div class="rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm overflow-hidden">
+                  <!-- Post header -->
+                  <div class="px-4 py-3 flex items-center gap-3 border-b border-n-slate-3">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
+                      {{ (selectedCommentConversation.contact_name || 'U')[0].toUpperCase() }}
+                    </div>
+                    <div>
+                      <div class="text-sm font-semibold text-n-slate-12">{{ selectedCommentConversation.inbox_name || 'Instagram' }}</div>
+                      <div class="text-[10px] text-n-slate-10">{{ selectedCommentConversation.platform || 'instagram' }}</div>
+                    </div>
+                    <a
+                      v-if="selectedCommentConversation.post_permalink"
+                      :href="selectedCommentConversation.post_permalink"
+                      target="_blank"
+                      class="ml-auto text-xs text-n-blue-11 hover:underline"
+                    >
+                      Mở trên Instagram ↗
+                    </a>
+                  </div>
+
+                  <!-- Post media -->
+                  <div v-if="selectedCommentConversation.post_media_url" class="bg-n-slate-2">
+                    <img
+                      :src="selectedCommentConversation.post_media_url"
+                      class="w-full max-h-80 object-cover"
+                      alt="Post media"
+                      @error="$event.target.style.display='none'"
+                    />
+                  </div>
+
+                  <!-- Post stats + caption -->
+                  <div class="px-4 py-3">
+                    <div class="flex items-center gap-4 text-sm text-n-slate-11 mb-2">
+                      <span v-if="selectedCommentConversation.post_like_count" class="flex items-center gap-1">
+                        ❤️ {{ Number(selectedCommentConversation.post_like_count).toLocaleString() }}
+                      </span>
+                      <span v-if="selectedCommentConversation.post_comment_count" class="flex items-center gap-1">
+                        💬 {{ Number(selectedCommentConversation.post_comment_count).toLocaleString() }}
+                      </span>
+                    </div>
+                    <div v-if="selectedCommentConversation.post_caption" class="text-sm text-n-slate-12 line-clamp-3">
+                      {{ selectedCommentConversation.post_caption }}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Thread -->
+                <div class="rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm overflow-hidden">
+                  <div class="px-4 py-3 border-b border-n-slate-3 bg-n-solid-2 flex items-center justify-between">
+                    <span class="text-sm font-semibold text-n-slate-12">💬 Thread Comment</span>
+                    <div class="flex items-center gap-2">
+                      <button
+                        class="h-8 px-3 rounded-lg text-xs font-medium bg-n-teal-3 text-n-teal-12 hover:bg-n-teal-4 transition-colors flex items-center gap-1.5"
+                        :disabled="isCommentAutoReplying"
+                        @click="triggerAutoReply(selectedCommentConversation)"
+                      >
+                        <div v-if="isCommentAutoReplying" class="w-3 h-3 rounded-full border-2 border-n-teal-9 border-t-transparent animate-spin"></div>
+                        <span>🤖 Auto Reply</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="overflow-y-auto max-h-[28rem] p-4 space-y-3">
+                    <!-- Loading -->
+                    <div v-if="isCommentThreadLoading" class="py-8 text-center text-sm text-n-slate-11">
+                      <div class="flex items-center justify-center gap-2">
+                        <div class="w-4 h-4 rounded-full border-2 border-n-teal-9 border-t-transparent animate-spin"></div>
+                        Đang tải thread...
+                      </div>
+                    </div>
+
+                    <!-- Empty -->
+                    <div v-else-if="!commentThread.length" class="py-8 text-center text-sm text-n-slate-11">
+                      Chưa có tin nhắn trong thread này
+                    </div>
+
+                    <!-- Messages -->
+                    <div
+                      v-for="msg in commentThread"
+                      :key="msg.id"
+                      class="flex gap-2"
+                      :class="msg.message_type === 'outgoing' ? 'justify-end' : 'justify-start'"
+                    >
+                      <div
+                        class="max-w-[75%] rounded-2xl px-4 py-2.5 text-sm shadow-sm"
+                        :class="
+                          msg.message_type === 'outgoing'
+                            ? 'bg-n-teal-3 text-n-teal-12 rounded-br-md'
+                            : 'bg-n-slate-3 text-n-slate-12 rounded-bl-md'
+                        "
+                      >
+                        <div class="text-[10px] font-semibold mb-1 opacity-70">
+                          {{ msg.message_type === 'outgoing' ? 'Bot / Agent' : (msg.sender_name || 'Khách') }}
+                        </div>
+                        <div>{{ msg.content }}</div>
+                        <div class="text-[10px] mt-1 opacity-50 text-right">{{ commentTimeAgo(msg.created_at) }}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Reply Composer -->
+                  <div class="px-4 py-3 border-t border-n-slate-3 bg-n-solid-2">
+                    <div class="flex items-end gap-2">
+                      <textarea
+                        v-model="commentReplyText"
+                        rows="2"
+                        class="flex-1 rounded-xl outline outline-1 outline-n-weak bg-n-background px-4 py-2.5 text-sm text-n-slate-12 resize-none focus:outline-n-teal-6 transition-colors placeholder:text-n-slate-10"
+                        placeholder="Viết reply comment..."
+                        @keydown.meta.enter="sendCommentReply"
+                        @keydown.ctrl.enter="sendCommentReply"
+                      />
+                      <button
+                        class="h-10 px-4 rounded-xl bg-n-teal-9 text-white text-sm font-semibold hover:bg-n-teal-10 transition-colors shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                        :disabled="!commentReplyText.trim() || isCommentReplying"
+                        @click="sendCommentReply"
+                      >
+                        <div v-if="isCommentReplying" class="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin"></div>
+                        <span>Gửi</span>
+                      </button>
+                    </div>
+                    <div class="mt-1.5 text-[10px] text-n-slate-10">⌘+Enter hoặc Ctrl+Enter để gửi nhanh</div>
                   </div>
                 </div>
               </div>

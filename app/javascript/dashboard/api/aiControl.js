@@ -77,6 +77,30 @@ class AiControlAPI extends ApiClient {
       action_type: actionType,
     });
   }
+
+  // ── Comment Tab ──
+
+  listComments({ platform, status, inboxId, limit = 50, offset = 0 } = {}) {
+    const params = { limit, offset };
+    if (platform) params.platform = platform;
+    if (status) params.status = status;
+    if (inboxId) params.inbox_id = inboxId;
+    return axios.get(`${this.url}/comments`, { params });
+  }
+
+  getCommentThread(conversationId) {
+    return axios.get(`${this.url}/comments/${conversationId}/thread`);
+  }
+
+  replyComment(conversationId, { message }) {
+    return axios.post(`${this.url}/comments/${conversationId}/reply`, {
+      message,
+    });
+  }
+
+  autoReplyComment(conversationId) {
+    return axios.post(`${this.url}/comments/${conversationId}/auto_reply`);
+  }
 }
 
 export default new AiControlAPI();
