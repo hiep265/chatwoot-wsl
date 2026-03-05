@@ -5,7 +5,6 @@ import { useAlert } from 'dashboard/composables';
 
 import InboxMembersAPI from '../../../../api/inboxMembers';
 import NextButton from 'dashboard/components-next/button/Button.vue';
-import router from '../../../index';
 import PageHeader from '../SettingsSubPageHeader.vue';
 import { useVuelidate } from '@vuelidate/core';
 
@@ -46,7 +45,7 @@ export default {
 
       try {
         await InboxMembersAPI.update({ inboxId, agentList: selectedAgents });
-        router.replace({
+        this.$router.replace({
           name: 'settings_inbox_finish',
           params: {
             page: 'new',

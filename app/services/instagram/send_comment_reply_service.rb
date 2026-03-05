@@ -1,83 +1,77 @@
 # frozen_string_literal: true
 
 class Instagram::SendCommentReplyService
-  pattr_initialize [:message!]
+  pattr_initialize [:social_comment!, :reply_text!, :channel!]
 
   def perform
-    return unless message.conversation.additional_attributes['type'] == 'instagram_comment'
-    return if message.content.blank?
-
     send_reply
   end
 
   private
 
   def send_reply
-    target_comment_id = find_target_comment_id
-    unless target_comment_id
-      Rails.logger.error(
-        "[InstagramCommentReply] No target comment_id found: " \
-        "message_id=#{message.id} conversation_id=#{message.conversation_id}"
-      )
-      Messages::StatusUpdateService.new(message, 'failed', 'No target comment_id for reply').perform
-      return
-    end
-
     access_token = channel_access_token
     unless access_token
-      Rails.logger.error("[InstagramCommentReply] No access token for channel")
-      Messages::StatusUpdateService.new(message, 'failed', 'No access token').perform
-      return
+      raise StandardError, 'No access token available for this channel'
     end
+
+    target_comment_id = social_comment.comment_id
 
     response = HTTParty.post(
       "https://graph.instagram.com/v22.0/#{target_comment_id}/replies",
-      body: { message: message.content },
-      query: { access_token: access_token }
+      body: { message: reply_text, access_token: access_token }
     )
 
-    process_response(response)
-  end
+    if response.success?
+      reply_id = response.parsed_response['id']
 
-  def find_target_comment_id
-    # V1: Reply to the root_comment_id stored in conversation attributes
-    # This replies directly to the original comment on the post
-    conversation = message.conversation
-    conversation.additional_attributes['root_comment_id']
-  end
+      unless reply_id.present?
+        raise StandardError, "Instagram API did not return reply id. Response: #{response.body}"
+      end
 
-  def process_response(response)
-    parsed = response.parsed_response
+      # Create outgoing record in social_comments
+      outgoing = SocialComment.new(
+        account_id: social_comment.account_id,
+        inbox_id: social_comment.inbox_id,
+        platform: social_comment.platform,
+        post_id: social_comment.post_id,
+        comment_id: reply_id,
+        parent_comment_id: target_comment_id,
+        content: reply_text,
+        author_name: 'Bot',
+        direction: :outgoing,
+        status: :replied,
+        source_reply_id: reply_id,
+        post_caption: social_comment.post_caption,
+        post_media_url: social_comment.post_media_url,
+        post_permalink: social_comment.post_permalink,
+        post_like_count: social_comment.post_like_count,
+        post_comment_count: social_comment.post_comment_count
+      )
 
-    if response.success? && parsed['id'].present?
-      message.update!(source_id: parsed['id'])
+      unless outgoing.save
+        raise StandardError, "Failed to save outgoing comment: #{outgoing.errors.full_messages.join(', ')}"
+      end
+
+      # Mark original comment as replied
+      social_comment.update!(status: :replied)
+
       Rails.logger.info(
-        "[InstagramCommentReply] Success: message_id=#{message.id} " \
-        "reply_id=#{parsed['id']} conversation_id=#{message.conversation_id}"
+        "[InstagramCommentReply] Success: social_comment_id=#{social_comment.id} " \
+        "reply_id=#{reply_id} outgoing_id=#{outgoing.id}"
       )
+
+      { success: true, reply_id: reply_id, outgoing_id: outgoing.id }
     else
-      error_msg = extract_error(parsed)
-      Rails.logger.error(
-        "[InstagramCommentReply] Failed: message_id=#{message.id} " \
-        "error=#{error_msg} conversation_id=#{message.conversation_id}"
-      )
-
-      # Handle authorization errors
-      error_code = parsed.dig('error', 'code')
-      channel.authorization_error! if error_code == 190
-
-      Messages::StatusUpdateService.new(message, 'failed', error_msg).perform
+      error_body = response.body rescue response.parsed_response
+      raise StandardError, "Instagram API error (#{response.code}): #{error_body}"
     end
-  end
-
-  def extract_error(parsed)
-    error_message = parsed.dig('error', 'message') || 'Unknown error'
-    error_code = parsed.dig('error', 'code') || 'unknown'
-    "#{error_code} - #{error_message}"
-  end
-
-  def channel
-    @channel ||= message.conversation.inbox.channel
+  rescue StandardError => e
+    Rails.logger.error(
+      "[InstagramCommentReply] Error: #{e.message} " \
+      "social_comment_id=#{social_comment.id}"
+    )
+    raise
   end
 
   def channel_access_token

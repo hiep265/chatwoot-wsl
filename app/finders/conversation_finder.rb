@@ -166,6 +166,7 @@ class ConversationFinder
     @conversations = @conversations.where(contact_inboxes: { source_id: params[:source_id] })
   end
 
+
   def set_count_for_all_conversations
     [
       @conversations.assigned_to(current_user).count,

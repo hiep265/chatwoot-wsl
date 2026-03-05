@@ -17,16 +17,6 @@ class SendReplyJob < ApplicationJob
 
   def perform(message_id)
     message = Message.find(message_id)
-    conversation_type = message.conversation.additional_attributes&.dig('type')
-
-    # Route comment conversations to dedicated reply services
-    case conversation_type
-    when 'instagram_comment'
-      return ::Instagram::SendCommentReplyService.new(message: message).perform
-    when 'facebook_comment'
-      # Phase 2: Facebook::SendCommentReplyService
-      return
-    end
 
     channel_name = message.conversation.inbox.channel.class.to_s
 

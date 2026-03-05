@@ -9,7 +9,6 @@ import LoadingState from 'dashboard/components/widgets/LoadingState.vue';
 
 import ChannelApi from '../../../../../api/channels';
 import PageHeader from '../../SettingsSubPageHeader.vue';
-import router from '../../../../index';
 import { useBranding } from 'shared/composables/useBranding';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 
@@ -191,7 +190,7 @@ export default {
         this.$store
           .dispatch('inboxes/createFBChannel', this.channelParams())
           .then(data => {
-            router.replace({
+            this.$router.replace({
               name: 'settings_inboxes_add_agents',
               params: { page: 'new', inbox_id: data.id },
             });

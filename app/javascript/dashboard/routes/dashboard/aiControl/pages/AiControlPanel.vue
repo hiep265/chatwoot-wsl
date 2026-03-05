@@ -17,6 +17,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 
 import AddLabel from '../../settings/labels/AddLabel.vue';
+import CommentThread from './CommentThread.vue';
 
 import { useAlert } from 'dashboard/composables';
 import { emitter } from 'shared/helpers/mitt';
@@ -1146,6 +1147,88 @@ const isCommentThreadLoading = ref(false);
 const commentReplyText = ref('');
 const isCommentReplying = ref(false);
 const isCommentAutoReplying = ref(false);
+const replyingToComment = ref(null);
+
+const setReplyingTo = (msg) => {
+  replyingToComment.value = msg;
+  commentReplyText.value = '';
+};
+
+const clearReplyingTo = () => {
+  replyingToComment.value = null;
+};
+
+// Build nested comment tree from flat list
+const buildCommentTree = (comments) => {
+  if (!Array.isArray(comments)) return [];
+
+  const commentMap = {};
+  const rootComments = [];
+
+  // First pass: create map of all comments
+  comments.forEach(c => {
+    commentMap[c.id] = { ...c, replies: [] };
+  });
+
+  // Second pass: build tree structure
+  comments.forEach(c => {
+    const node = commentMap[c.id];
+    if (c.parent_comment_id && commentMap[comments.find(x => x.comment_id === c.parent_comment_id)?.id]) {
+      // Find parent by comment_id
+      const parent = Object.values(commentMap).find(p => p.comment_id === c.parent_comment_id);
+      if (parent) {
+        parent.replies.push(node);
+      } else {
+        rootComments.push(node);
+      }
+    } else {
+      rootComments.push(node);
+    }
+  });
+
+  return rootComments;
+};
+
+// Nested comment component template (rendered recursively)
+const renderCommentNode = (msg, depth = 0) => {
+  const isReply = depth > 0;
+  const maxDepth = 3;
+
+  return `
+    <div class="flex flex-col gap-1 ${isReply ? 'ml-6 mt-2 border-l-2 border-n-slate-3 pl-3' : ''}">
+      <div
+        class="max-w-[85%] rounded-xl px-3 py-2 text-sm shadow-sm group relative"
+        :class="
+          msg.direction === 'outgoing'
+            ? 'bg-n-teal-3 text-n-teal-12 rounded-br-md'
+            : 'bg-n-slate-3 text-n-slate-12 rounded-bl-md'
+        "
+      >
+        <div class="flex items-center gap-2 mb-1">
+          <div
+            class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-bold"
+            :class="msg.direction === 'outgoing' ? 'bg-n-teal-4 text-n-teal-11' : 'bg-n-slate-4 text-n-slate-11'"
+          >
+            ${msg.direction === 'outgoing' ? '🤖' : (msg.author_name || 'U')[0].toUpperCase()}
+          </div>
+          <span class="text-[10px] font-semibold opacity-80">
+            {{ msg.direction === 'outgoing' ? 'Bot / Agent' : (msg.author_name || 'Khách') }}
+          </span>
+          <span class="text-[9px] opacity-50">{{ commentTimeAgo(msg.created_at) }}</span>
+        </div>
+        <div class="text-xs leading-relaxed">{{ msg.content }}</div>
+      </div>
+      <!-- Reply button -->
+      <button
+        v-if="msg.direction === 'incoming'"
+        @click="setReplyingTo(msg)"
+        class="text-[9px] font-medium text-n-slate-11 hover:text-n-blue-11 bg-white px-2 py-0.5 rounded shadow-sm w-fit opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        ↩️ Reply
+      </button>
+    </div>
+  `;
+};
 
 const fetchCommentQueue = async () => {
   isCommentLoading.value = true;
@@ -1166,31 +1249,31 @@ const fetchCommentQueue = async () => {
   }
 };
 
-const selectCommentConversation = async (item) => {
+const selectCommentConversation = (item) => {
   selectedCommentConversation.value = item;
-  isCommentThreadLoading.value = true;
   commentReplyText.value = '';
-  try {
-    const response = await AiControlAPI.getCommentThread(item.conversation_id);
-    const data = response?.data || {};
-    commentThread.value = Array.isArray(data.messages) ? data.messages : [];
-  } catch (e) {
-    commentThread.value = [];
-    useAlert('Không tải được thread comment.');
-  } finally {
-    isCommentThreadLoading.value = false;
-  }
+  replyingToComment.value = null;
+  // Use embedded messages from the comments API response
+  commentThread.value = Array.isArray(item.messages) ? item.messages : [];
 };
 
 const sendCommentReply = async () => {
   const text = commentReplyText.value.trim();
   if (!text || !selectedCommentConversation.value) return;
+  // Use the selected comment to reply to, or fallback to last incoming
+  const targetComment = replyingToComment.value || commentThread.value.filter(m => m.direction === 'incoming').slice(-1)[0];
+  if (!targetComment) { useAlert('Không tìm thấy comment để reply.'); return; }
   isCommentReplying.value = true;
   try {
-    await AiControlAPI.replyComment(selectedCommentConversation.value.conversation_id, { message: text });
+    await AiControlAPI.replyComment(targetComment.id, { message: text });
     commentReplyText.value = '';
+    replyingToComment.value = null;
     useAlert('Đã gửi reply comment thành công.');
-    await selectCommentConversation(selectedCommentConversation.value);
+    await fetchCommentQueue();
+    const updated = commentQueue.value.find(
+      c => c.post_id === selectedCommentConversation.value.post_id
+    );
+    if (updated) selectCommentConversation(updated);
   } catch (e) {
     useAlert('Không thể gửi reply comment.');
   } finally {
@@ -1201,9 +1284,13 @@ const sendCommentReply = async () => {
 const triggerAutoReply = async (item) => {
   const target = item || selectedCommentConversation.value;
   if (!target) return;
+  // Find the last incoming comment to trigger auto-reply on
+  const msgs = target.messages || [];
+  const lastIncoming = msgs.filter(m => m.direction === 'incoming').slice(-1)[0];
+  if (!lastIncoming) { useAlert('Không tìm thấy comment để auto-reply.'); return; }
   isCommentAutoReplying.value = true;
   try {
-    await AiControlAPI.autoReplyComment(target.conversation_id);
+    await AiControlAPI.autoReplyComment(lastIncoming.id);
     useAlert('Đã gửi yêu cầu auto-reply. AI sẽ phản hồi trong giây lát.');
   } catch (e) {
     useAlert('Không thể trigger auto-reply.');
@@ -2103,38 +2190,46 @@ onBeforeUnmount(() => {
                 <!-- Queue Items -->
                 <div
                   v-for="item in commentQueue"
-                  :key="item.conversation_id"
+                  :key="item.post_id"
                   class="px-4 py-3 cursor-pointer transition-all hover:bg-n-slate-2/50"
-                  :class="selectedCommentConversation?.conversation_id === item.conversation_id ? 'bg-n-teal-2/50 border-l-2 border-n-teal-9' : ''"
+                  :class="selectedCommentConversation?.post_id === item.post_id ? 'bg-n-teal-2/50 border-l-2 border-n-teal-9' : ''"
                   @click="selectCommentConversation(item)"
                 >
+                  <!-- Post header with media and latest comment -->
                   <div class="flex items-start gap-3">
-                    <Avatar
-                      :name="item.contact_name || 'User'"
-                      :src="item.contact_avatar_url"
-                      :size="36"
-                      rounded-full
-                      class="ring-2 ring-white flex-shrink-0"
-                    />
+                    <!-- Post Media Preview -->
+                    <div class="w-14 h-14 rounded-lg bg-n-slate-3 flex-shrink-0 overflow-hidden relative">
+                      <img
+                        v-if="item.post_media_url"
+                        :src="item.post_media_url"
+                        class="w-full h-full object-cover"
+                        alt="Post preview"
+                        @error="$event.target.style.display='none'"
+                      />
+                      <div v-else class="w-full h-full flex items-center justify-center text-n-slate-10">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                      </div>
+                      <!-- Platform badge overlay -->
+                      <div
+                        class="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-sm flex items-center justify-center text-[8px]"
+                        :class="item.platform === 'instagram' ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white' : 'bg-blue-600 text-white'"
+                      >
+                        {{ item.platform === 'instagram' ? '📸' : '📘' }}
+                      </div>
+                    </div>
                     <div class="min-w-0 flex-1">
                       <div class="flex items-center justify-between">
-                        <span class="text-sm font-semibold text-n-slate-12 truncate">{{ item.contact_name || 'Người dùng' }}</span>
-                        <span class="text-[10px] text-n-slate-10 flex-shrink-0 ml-2">{{ commentTimeAgo(item.last_message_at) }}</span>
+                        <span class="text-sm font-semibold text-n-slate-12 truncate">{{ item.post_caption ? item.post_caption.substring(0, 35) + '...' : 'Bài viết' }}</span>
+                        <span class="text-[10px] text-n-slate-10 flex-shrink-0 ml-2">{{ commentTimeAgo(item.last_activity_at) }}</span>
                       </div>
-                      <div class="text-xs text-n-slate-11 mt-0.5 line-clamp-2">{{ item.last_message_content || '...' }}</div>
-                      <div class="flex items-center gap-2 mt-1.5">
-                        <span
-                          class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset"
-                          :class="
-                            item.platform === 'instagram'
-                              ? 'bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 ring-purple-200'
-                              : 'bg-n-blue-2 text-n-blue-11 ring-n-blue-4'
-                          "
-                        >
-                          {{ item.platform === 'instagram' ? '📸 IG' : '📘 FB' }}
+                      <!-- Latest comment preview -->
+                      <div class="mt-1 text-xs text-n-slate-11 line-clamp-2">
+                        <span v-if="item.messages && item.messages.length">
+                          <span class="font-medium text-n-slate-12">{{ item.messages[item.messages.length - 1].author_name || 'Khách' }}:</span>
+                          {{ item.messages[item.messages.length - 1].content || '...' }}
                         </span>
-                        <span class="text-[10px] text-n-slate-10">{{ item.messages_count }} tin nhắn</span>
                       </div>
+                      <div class="text-[10px] text-n-slate-10 mt-1">{{ item.messages_count }} comment · Nhấn để xem chi tiết</div>
                     </div>
                   </div>
                 </div>
@@ -2157,10 +2252,10 @@ onBeforeUnmount(() => {
                   <!-- Post header -->
                   <div class="px-4 py-3 flex items-center gap-3 border-b border-n-slate-3">
                     <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
-                      {{ (selectedCommentConversation.contact_name || 'U')[0].toUpperCase() }}
+                      📷
                     </div>
                     <div>
-                      <div class="text-sm font-semibold text-n-slate-12">{{ selectedCommentConversation.inbox_name || 'Instagram' }}</div>
+                      <div class="text-sm font-semibold text-n-slate-12">Post: {{ selectedCommentConversation.post_id }}</div>
                       <div class="text-[10px] text-n-slate-10">{{ selectedCommentConversation.platform || 'instagram' }}</div>
                     </div>
                     <a
@@ -2229,38 +2324,39 @@ onBeforeUnmount(() => {
                       Chưa có tin nhắn trong thread này
                     </div>
 
-                    <!-- Messages -->
-                    <div
-                      v-for="msg in commentThread"
-                      :key="msg.id"
-                      class="flex gap-2"
-                      :class="msg.message_type === 'outgoing' ? 'justify-end' : 'justify-start'"
-                    >
-                      <div
-                        class="max-w-[75%] rounded-2xl px-4 py-2.5 text-sm shadow-sm"
-                        :class="
-                          msg.message_type === 'outgoing'
-                            ? 'bg-n-teal-3 text-n-teal-12 rounded-br-md'
-                            : 'bg-n-slate-3 text-n-slate-12 rounded-bl-md'
-                        "
-                      >
-                        <div class="text-[10px] font-semibold mb-1 opacity-70">
-                          {{ msg.message_type === 'outgoing' ? 'Bot / Agent' : (msg.sender_name || 'Khách') }}
-                        </div>
-                        <div>{{ msg.content }}</div>
-                        <div class="text-[10px] mt-1 opacity-50 text-right">{{ commentTimeAgo(msg.created_at) }}</div>
-                      </div>
-                    </div>
+                    <!-- Messages with nested structure -->
+                    <CommentThread
+                      :comments="commentThread"
+                      :replying-to="replyingToComment"
+                      @reply="setReplyingTo"
+                    />
                   </div>
 
                   <!-- Reply Composer -->
                   <div class="px-4 py-3 border-t border-n-slate-3 bg-n-solid-2">
+                    <!-- Replying to indicator -->
+                    <div
+                      v-if="replyingToComment"
+                      class="mb-2 px-3 py-2 rounded-lg bg-n-blue-2 border border-n-blue-4 flex items-center justify-between"
+                    >
+                      <div class="text-xs text-n-blue-11">
+                        <span class="font-semibold">Đang reply:</span>
+                        <span class="ml-1 text-n-slate-12">{{ replyingToComment.author_name || 'Khách' }}</span>
+                        <span class="text-n-slate-10 ml-1">"{{ (replyingToComment.content || '').substring(0, 50) }}{{ (replyingToComment.content || '').length > 50 ? '...' : '' }}"</span>
+                      </div>
+                      <button
+                        @click="clearReplyingTo"
+                        class="text-n-slate-10 hover:text-n-slate-12"
+                      >
+                        ✕
+                      </button>
+                    </div>
                     <div class="flex items-end gap-2">
                       <textarea
                         v-model="commentReplyText"
                         rows="2"
                         class="flex-1 rounded-xl outline outline-1 outline-n-weak bg-n-background px-4 py-2.5 text-sm text-n-slate-12 resize-none focus:outline-n-teal-6 transition-colors placeholder:text-n-slate-10"
-                        placeholder="Viết reply comment..."
+                        :placeholder="replyingToComment ? `Reply ${replyingToComment.author_name || 'Khách'}...` : 'Viết reply comment...'"
                         @keydown.meta.enter="sendCommentReply"
                         @keydown.ctrl.enter="sendCommentReply"
                       />

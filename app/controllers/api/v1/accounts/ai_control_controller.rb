@@ -221,87 +221,84 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     status_filter = params[:status].to_s.strip.presence
     inbox_id = params[:inbox_id].to_s.strip.presence
 
-    scope = Current.account.conversations
-                    .where("additional_attributes->>'type' IN (?)", %w[instagram_comment facebook_comment])
-                    .order(last_activity_at: :desc)
+    base_scope = SocialComment.where(account_id: Current.account.id)
+    base_scope = base_scope.where(platform: platform) if platform.present?
+    base_scope = base_scope.where(inbox_id: inbox_id) if inbox_id.present?
+    base_scope = base_scope.where(status: status_filter) if status_filter.present? && SocialComment.statuses.key?(status_filter)
 
-    scope = scope.where("additional_attributes->>'platform' = ?", platform) if platform.present?
-    scope = scope.where(inbox_id: inbox_id) if inbox_id.present?
+    # Group by post_id to show per-post comment threads
+    post_ids = base_scope.select(:post_id).distinct.limit(limit).offset(offset).pluck(:post_id)
+    total_posts = base_scope.select(:post_id).distinct.count
 
-    # Status filtering via conversation status
-    if status_filter.present?
-      case status_filter
-      when 'pending'
-        scope = scope.where(status: :pending)
-      when 'resolved'
-        scope = scope.where(status: :resolved)
-      when 'open'
-        scope = scope.where(status: :open)
-      end
-    end
+    result = post_ids.map do |post_id|
+      post_comments = base_scope.where(post_id: post_id).order(created_at: :asc)
+      first_comment = post_comments.first
 
-    total = scope.count
-    conversations = scope.limit(limit).offset(offset).includes(:contact, :inbox, :messages)
-
-    result = conversations.map do |conversation|
-      last_message = conversation.messages.order(created_at: :desc).first
       {
-        conversation_id: conversation.id,
-        display_id: conversation.display_id,
-        status: conversation.status,
-        platform: conversation.additional_attributes['platform'],
-        post_id: conversation.additional_attributes['post_id'],
-        post_caption: conversation.additional_attributes['post_caption'],
-        post_media_url: conversation.additional_attributes['post_media_url'],
-        post_like_count: conversation.additional_attributes['post_like_count'],
-        post_comment_count: conversation.additional_attributes['post_comment_count'],
-        post_permalink: conversation.additional_attributes['post_permalink'],
-        root_comment_id: conversation.additional_attributes['root_comment_id'],
-        inbox_id: conversation.inbox_id,
-        inbox_name: conversation.inbox&.name,
-        contact_name: conversation.contact&.name,
-        contact_avatar_url: conversation.contact&.avatar_url,
-        last_message_content: last_message&.content,
-        last_message_at: last_message&.created_at,
-        messages_count: conversation.messages.count,
-        created_at: conversation.created_at,
-        last_activity_at: conversation.last_activity_at
+        post_id: post_id,
+        platform: first_comment&.platform,
+        post_caption: first_comment&.post_caption,
+        post_media_url: first_comment&.post_media_url,
+        post_permalink: first_comment&.post_permalink,
+        post_like_count: first_comment&.post_like_count,
+        post_comment_count: first_comment&.post_comment_count,
+        inbox_id: first_comment&.inbox_id,
+        messages: post_comments.map do |c|
+          {
+            id: c.id,
+            comment_id: c.comment_id,
+            parent_comment_id: c.parent_comment_id,
+            content: c.content,
+            author_name: c.author_name,
+            author_id: c.author_id,
+            direction: c.direction,
+            status: c.status,
+            source_reply_id: c.source_reply_id,
+            created_at: c.created_at
+          }
+        end,
+        messages_count: post_comments.size,
+        last_activity_at: post_comments.last&.created_at
       }
     end
 
-    render json: { comments: result, total: total, limit: limit, offset: offset }, status: :ok
+    render json: { comments: result, total: total_posts, limit: limit, offset: offset }, status: :ok
   rescue StandardError => e
     Rails.logger.error("[AiControl] comments_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}")
     render json: { error: 'Unable to fetch comments', detail: e.message }, status: :internal_server_error
   end
 
   def comment_thread
-    conversation = Current.account.conversations.find_by(id: params[:conversation_id])
-    unless conversation
-      render json: { error: 'Conversation not found' }, status: :not_found
+    post_id = params[:conversation_id] # reusing route param for post_id
+    comments = SocialComment.where(account_id: Current.account.id, post_id: post_id)
+                            .order(created_at: :asc)
+
+    if comments.empty?
+      render json: { error: 'No comments found for this post' }, status: :not_found
       return
     end
 
-    messages = conversation.messages.order(created_at: :asc).map do |msg|
-      {
-        id: msg.id,
-        content: msg.content,
-        message_type: msg.message_type,
-        source_id: msg.source_id,
-        sender_name: msg.sender&.name,
-        sender_type: msg.sender_type,
-        content_attributes: msg.content_attributes,
-        created_at: msg.created_at,
-        status: msg.status
-      }
-    end
-
+    first = comments.first
     render json: {
-      conversation_id: conversation.id,
-      display_id: conversation.display_id,
-      status: conversation.status,
-      additional_attributes: conversation.additional_attributes,
-      messages: messages
+      post_id: post_id,
+      platform: first.platform,
+      post_caption: first.post_caption,
+      post_media_url: first.post_media_url,
+      post_permalink: first.post_permalink,
+      messages: comments.map do |c|
+        {
+          id: c.id,
+          comment_id: c.comment_id,
+          parent_comment_id: c.parent_comment_id,
+          content: c.content,
+          author_name: c.author_name,
+          author_id: c.author_id,
+          direction: c.direction,
+          status: c.status,
+          source_reply_id: c.source_reply_id,
+          created_at: c.created_at
+        }
+      end
     }, status: :ok
   rescue StandardError => e
     Rails.logger.error("[AiControl] comment_thread_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}")
@@ -309,9 +306,9 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
   end
 
   def reply_comment
-    conversation = Current.account.conversations.find_by(id: params[:conversation_id])
-    unless conversation
-      render json: { error: 'Conversation not found' }, status: :not_found
+    social_comment = SocialComment.find_by(id: params[:conversation_id], account_id: Current.account.id)
+    unless social_comment
+      render json: { error: 'Comment not found' }, status: :not_found
       return
     end
 
@@ -321,45 +318,50 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
       return
     end
 
-    message = conversation.messages.create!(
-      account_id: conversation.account_id,
-      inbox_id: conversation.inbox_id,
-      message_type: :outgoing,
-      content: content,
-      sender: Current.user,
-      content_attributes: {
-        is_social_comment: true,
-        is_bot_generated: false
-      }
-    )
+    # Find the channel for this inbox
+    inbox = social_comment.inbox
+    channel = inbox&.channel
+    unless channel
+      render json: { error: 'Channel not found' }, status: :unprocessable_entity
+      return
+    end
 
-    Rails.logger.info(
-      "[AiControl] reply_comment conversation_id=#{conversation.id} message_id=#{message.id}"
-    )
-    render json: { message_id: message.id, status: 'sent' }, status: :ok
+    ::Instagram::SendCommentReplyService.new(
+      social_comment: social_comment,
+      reply_text: content,
+      channel: channel
+    ).perform
+
+    Rails.logger.info("[AiControl] reply_comment social_comment_id=#{social_comment.id}")
+    render json: { status: 'sent', social_comment_id: social_comment.id }, status: :ok
   rescue StandardError => e
     Rails.logger.error("[AiControl] reply_comment_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}")
     render json: { error: 'Unable to reply comment', detail: e.message }, status: :internal_server_error
   end
 
   def auto_reply_comment
-    conversation = Current.account.conversations.find_by(id: params[:conversation_id])
-    unless conversation
-      render json: { error: 'Conversation not found' }, status: :not_found
+    social_comment = SocialComment.find_by(id: params[:conversation_id], account_id: Current.account.id)
+    unless social_comment
+      render json: { error: 'Comment not found' }, status: :not_found
       return
     end
 
-    # Trigger chatbotlevan by re-dispatching the last incoming message's webhook event.
-    # The WebhookListener will pick it up and forward to chatbotlevan.
-    last_incoming = conversation.messages.where(message_type: :incoming).order(created_at: :desc).first
-    unless last_incoming
-      render json: { error: 'No incoming message to trigger auto-reply' }, status: :unprocessable_entity
-      return
-    end
-
-    # Fire the webhook event for chatbotlevan to process
-    payload = last_incoming.webhook_data.merge(event: 'message_created')
-    account = conversation.account
+    # Trigger chatbotlevan by sending a webhook with the comment data
+    account = Current.account
+    payload = {
+      event: 'social_comment_created',
+      social_comment: {
+        id: social_comment.id,
+        comment_id: social_comment.comment_id,
+        content: social_comment.content,
+        author_name: social_comment.author_name,
+        post_id: social_comment.post_id,
+        post_caption: social_comment.post_caption,
+        platform: social_comment.platform,
+        inbox_id: social_comment.inbox_id,
+        account_id: social_comment.account_id
+      }
+    }
 
     account.webhooks.account_type.each do |webhook|
       next unless webhook.subscriptions.include?('message_created')
@@ -367,11 +369,8 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
       WebhookJob.perform_later(webhook.url, payload)
     end
 
-    Rails.logger.info(
-      "[AiControl] auto_reply_comment conversation_id=#{conversation.id} " \
-      "message_id=#{last_incoming.id}"
-    )
-    render json: { status: 'triggered', message_id: last_incoming.id }, status: :ok
+    Rails.logger.info("[AiControl] auto_reply_comment social_comment_id=#{social_comment.id}")
+    render json: { status: 'triggered', social_comment_id: social_comment.id }, status: :ok
   rescue StandardError => e
     Rails.logger.error("[AiControl] auto_reply_comment_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}")
     render json: { error: 'Unable to trigger auto-reply', detail: e.message }, status: :internal_server_error

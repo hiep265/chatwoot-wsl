@@ -5,8 +5,6 @@ import {
   useStore,
 } from 'dashboard/composables/store.js';
 import { useAccount } from 'dashboard/composables/useAccount';
-import { useConfig } from 'dashboard/composables/useConfig';
-import { useCamelCase } from 'dashboard/composables/useTransformKeys';
 import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
@@ -15,9 +13,7 @@ import TasksAPI from 'dashboard/api/captain/tasks';
 export function useCaptain() {
   const store = useStore();
   const { t } = useI18n();
-  const { isCloudFeatureEnabled, currentAccount } = useAccount();
-  const { isEnterprise } = useConfig();
-  const uiFlags = useMapGetter('accounts/getUIFlags');
+  const { isCloudFeatureEnabled } = useAccount();
   const currentChat = useMapGetter('getSelectedChat');
   const replyMode = useMapGetter('draftMessages/getReplyEditorMode');
   const conversationId = computed(() => currentChat.value?.id);
@@ -35,33 +31,6 @@ export function useCaptain() {
   const captainTasksEnabled = computed(() => {
     return isCloudFeatureEnabled(FEATURE_FLAGS.CAPTAIN_TASKS);
   });
-
-  // === Limits (Enterprise) ===
-  const captainLimits = computed(() => {
-    return currentAccount.value?.limits?.captain;
-  });
-
-  const documentLimits = computed(() => {
-    if (captainLimits.value?.documents) {
-      return useCamelCase(captainLimits.value.documents);
-    }
-    return null;
-  });
-
-  const responseLimits = computed(() => {
-    if (captainLimits.value?.responses) {
-      return useCamelCase(captainLimits.value.responses);
-    }
-    return null;
-  });
-
-  const isFetchingLimits = computed(() => uiFlags.value.isFetchingLimits);
-
-  const fetchLimits = () => {
-    if (isEnterprise) {
-      store.dispatch('accounts/limits');
-    }
-  };
 
   // === Error Handling ===
   /**
@@ -199,13 +168,6 @@ export function useCaptain() {
     // Feature flags
     captainEnabled,
     captainTasksEnabled,
-
-    // Limits (Enterprise)
-    captainLimits,
-    documentLimits,
-    responseLimits,
-    fetchLimits,
-    isFetchingLimits,
 
     // Conversation context
     draftMessage,
