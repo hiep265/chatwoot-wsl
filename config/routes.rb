@@ -98,6 +98,8 @@ Rails.application.routes.draw do
           post 'ai_control/blocked_inboxes', to: 'ai_control#block_inbox'
           delete 'ai_control/blocked_inboxes', to: 'ai_control#unblock_inbox'
           post 'ai_control/blocked_inboxes/toggle_all', to: 'ai_control#toggle_all_inboxes'
+          get 'ai_control/comment_webhook_config', to: 'ai_control#comment_webhook_config'
+          put 'ai_control/comment_webhook_config', to: 'ai_control#update_comment_webhook_config'
           get 'ai_control/comments', to: 'ai_control#comments'
           get 'ai_control/comments/:conversation_id/thread', to: 'ai_control#comment_thread'
           post 'ai_control/comments/:conversation_id/reply', to: 'ai_control#reply_comment'

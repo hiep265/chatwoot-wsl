@@ -3,6 +3,7 @@ import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useBranding } from 'shared/composables/useBranding';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import AiControlAPI from 'dashboard/api/aiControl';
 import NewWebhook from './NewWebHook.vue';
 import EditWebhook from './EditWebHook.vue';
 import WebhookRow from './WebhookRow.vue';
@@ -29,6 +30,9 @@ export default {
       showEditPopup: false,
       showDeleteConfirmationPopup: false,
       selectedWebHook: {},
+      commentWebhookUrl: '',
+      isCommentWebhookLoading: false,
+      isCommentWebhookSaving: false,
     };
   },
   computed: {
@@ -50,6 +54,7 @@ export default {
   },
   mounted() {
     this.$store.dispatch('webhooks/get');
+    this.fetchCommentWebhookConfig();
   },
   methods: {
     openAddPopup() {
@@ -89,6 +94,38 @@ export default {
         );
       }
     },
+    async fetchCommentWebhookConfig() {
+      this.isCommentWebhookLoading = true;
+      try {
+        const response = await AiControlAPI.getCommentWebhookConfig();
+        this.commentWebhookUrl = String(
+          response?.data?.comment_webhook_url || ''
+        ).trim();
+      } catch (error) {
+        this.commentWebhookUrl = '';
+        useAlert('Không tải được cấu hình comment webhook.');
+      } finally {
+        this.isCommentWebhookLoading = false;
+      }
+    },
+    async saveCommentWebhookConfig() {
+      this.isCommentWebhookSaving = true;
+      try {
+        const response = await AiControlAPI.updateCommentWebhookConfig({
+          commentWebhookUrl: this.commentWebhookUrl,
+        });
+        this.commentWebhookUrl = String(
+          response?.data?.comment_webhook_url || ''
+        ).trim();
+        useAlert('Đã lưu cấu hình comment webhook.');
+      } catch (error) {
+        const message =
+          error?.response?.data?.error || 'Không thể lưu cấu hình comment webhook.';
+        useAlert(message);
+      } finally {
+        this.isCommentWebhookSaving = false;
+      }
+    },
   },
 };
 </script>
@@ -120,6 +157,29 @@ export default {
       </BaseSettingsHeader>
     </template>
     <template #body>
+      <div class="rounded-xl border border-n-weak p-4 mb-4 bg-n-solid-2">
+        <div class="text-sm font-semibold text-n-slate-12">
+          Comment Auto-Reply Webhook
+        </div>
+        <div class="mt-1 text-xs text-n-slate-11">
+          URL này được dùng cho nút Auto Reply ở tab Comment (Ai Control).
+        </div>
+        <div class="mt-3 flex flex-col gap-2 lg:flex-row lg:items-center">
+          <input
+            v-model="commentWebhookUrl"
+            type="text"
+            class="h-9 flex-1 rounded-lg outline outline-1 outline-n-weak bg-n-background px-3 text-xs text-n-slate-12"
+            placeholder="http://chatbotlevan-api:8000/webhooks/chatwoot/comments"
+            :disabled="isCommentWebhookLoading || isCommentWebhookSaving"
+          />
+          <NextButton
+            blue
+            :label="isCommentWebhookSaving ? 'Đang lưu...' : 'Lưu cấu hình'"
+            :disabled="isCommentWebhookLoading || isCommentWebhookSaving"
+            @click="saveCommentWebhookConfig"
+          />
+        </div>
+      </div>
       <table class="min-w-full divide-y divide-n-weak">
         <thead>
           <th

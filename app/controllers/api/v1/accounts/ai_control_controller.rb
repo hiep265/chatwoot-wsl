@@ -212,6 +212,34 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     render json: { blocked_inbox_ids: blocked_ids }, status: :ok
   end
 
+  def comment_webhook_config
+    render json: { comment_webhook_url: chatbotlevan_comment_webhook_url }, status: :ok
+  end
+
+  def update_comment_webhook_config
+    requested_url = params[:comment_webhook_url].to_s.strip
+    if requested_url.blank?
+      ::Redis::Alfred.delete(comment_webhook_url_redis_key)
+      render json: { status: 'cleared', comment_webhook_url: chatbotlevan_comment_webhook_url }, status: :ok
+      return
+    end
+
+    begin
+      parsed = URI.parse(requested_url)
+      unless parsed.is_a?(URI::HTTP) && parsed.host.present?
+        render json: { error: 'comment_webhook_url must be a valid http/https URL' }, status: :unprocessable_entity
+        return
+      end
+    rescue URI::InvalidURIError
+      render json: { error: 'comment_webhook_url must be a valid URL' }, status: :unprocessable_entity
+      return
+    end
+
+    normalized_url = requested_url.chomp('/')
+    ::Redis::Alfred.set(comment_webhook_url_redis_key, normalized_url)
+    render json: { status: 'saved', comment_webhook_url: normalized_url }, status: :ok
+  end
+
   # ── Comment Tab ──
 
   def comments
@@ -346,8 +374,14 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
       return
     end
 
+    requested_comment_webhook_url = params[:comment_webhook_url].to_s.strip.chomp('/')
+    comment_webhook_url = requested_comment_webhook_url.presence || chatbotlevan_comment_webhook_url
+    unless comment_webhook_url.present?
+      render json: { error: 'CHATBOTLEVAN comment webhook is not configured' }, status: :unprocessable_entity
+      return
+    end
+
     # Trigger chatbotlevan by sending a webhook with the comment data
-    account = Current.account
     payload = {
       event: 'social_comment_created',
       social_comment: {
@@ -363,14 +397,16 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
       }
     }
 
-    account.webhooks.account_type.each do |webhook|
-      next unless webhook.subscriptions.include?('message_created')
+    WebhookJob.perform_later(comment_webhook_url, payload)
 
-      WebhookJob.perform_later(webhook.url, payload)
-    end
-
-    Rails.logger.info("[AiControl] auto_reply_comment social_comment_id=#{social_comment.id}")
-    render json: { status: 'triggered', social_comment_id: social_comment.id }, status: :ok
+    Rails.logger.info(
+      "[AiControl] auto_reply_comment social_comment_id=#{social_comment.id} webhook_url=#{comment_webhook_url}"
+    )
+    render json: {
+      status: 'triggered',
+      social_comment_id: social_comment.id,
+      webhook_url: comment_webhook_url
+    }, status: :ok
   rescue StandardError => e
     Rails.logger.error("[AiControl] auto_reply_comment_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}")
     render json: { error: 'Unable to trigger auto-reply', detail: e.message }, status: :internal_server_error
@@ -384,6 +420,23 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
 
   def chatbotlevan_base_url
     ENV.fetch('CHATBOTLEVAN_BASE_URL', '').to_s.strip.chomp('/')
+  end
+
+  def chatbotlevan_comment_webhook_url
+    configured_by_account = ::Redis::Alfred.get(comment_webhook_url_redis_key).to_s.strip
+    return configured_by_account.chomp('/') if configured_by_account.present?
+
+    configured_url = ENV.fetch('CHATBOTLEVAN_COMMENT_WEBHOOK_URL', '').to_s.strip
+    return configured_url.chomp('/') if configured_url.present?
+
+    base_url = chatbotlevan_base_url
+    return '' if base_url.blank?
+
+    "#{base_url}/webhooks/chatwoot/comments"
+  end
+
+  def comment_webhook_url_redis_key
+    "ai_control:comment_webhook_url:#{Current.account.id}"
   end
 
   def blocked_inboxes_redis_key

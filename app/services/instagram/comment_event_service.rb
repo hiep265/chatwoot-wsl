@@ -18,6 +18,7 @@ class Instagram::CommentEventService
     create_social_comment
     mark_comment_seen
     fetch_post_metadata if @social_comment.present? && @media_id.present?
+    dispatch_comment_webhook if @social_comment.present?
   rescue StandardError => e
     Rails.logger.error(
       "[InstagramComment] Service error: #{e.message} " \
@@ -108,6 +109,17 @@ class Instagram::CommentEventService
     rescue StandardError => e
       Rails.logger.error("[InstagramComment] Graph API error: #{e.message} post_id=#{@media_id}")
     end
+  end
+
+  def dispatch_comment_webhook
+    AiControl::CommentWebhookDispatchService.new(
+      social_comment: @social_comment
+    ).perform
+  rescue StandardError => e
+    Rails.logger.error(
+      "[InstagramComment] Auto webhook dispatch failed: #{e.message} " \
+      "social_comment_id=#{@social_comment&.id} account_id=#{inbox&.account_id}"
+    )
   end
 
   def channel_access_token

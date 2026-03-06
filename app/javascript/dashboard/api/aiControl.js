@@ -78,6 +78,17 @@ class AiControlAPI extends ApiClient {
     });
   }
 
+  getCommentWebhookConfig() {
+    return axios.get(`${this.url}/comment_webhook_config`);
+  }
+
+  updateCommentWebhookConfig({ commentWebhookUrl } = {}) {
+    const payload = {
+      comment_webhook_url: String(commentWebhookUrl || '').trim(),
+    };
+    return axios.put(`${this.url}/comment_webhook_config`, payload);
+  }
+
   // ── Comment Tab ──
 
   listComments({ platform, status, inboxId, limit = 50, offset = 0 } = {}) {
@@ -98,8 +109,12 @@ class AiControlAPI extends ApiClient {
     });
   }
 
-  autoReplyComment(conversationId) {
-    return axios.post(`${this.url}/comments/${conversationId}/auto_reply`);
+  autoReplyComment(conversationId, { commentWebhookUrl } = {}) {
+    const payload = {};
+    if (commentWebhookUrl) {
+      payload.comment_webhook_url = String(commentWebhookUrl).trim();
+    }
+    return axios.post(`${this.url}/comments/${conversationId}/auto_reply`, payload);
   }
 }
 

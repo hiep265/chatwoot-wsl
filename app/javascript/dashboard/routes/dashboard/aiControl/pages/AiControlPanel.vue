@@ -1290,8 +1290,13 @@ const triggerAutoReply = async (item) => {
   if (!lastIncoming) { useAlert('Không tìm thấy comment để auto-reply.'); return; }
   isCommentAutoReplying.value = true;
   try {
-    await AiControlAPI.autoReplyComment(lastIncoming.id);
-    useAlert('Đã gửi yêu cầu auto-reply. AI sẽ phản hồi trong giây lát.');
+    const response = await AiControlAPI.autoReplyComment(lastIncoming.id);
+    const usedWebhookUrl = String(response?.data?.webhook_url || '').trim();
+    if (usedWebhookUrl) {
+      useAlert(`Đã gửi yêu cầu auto-reply qua ${usedWebhookUrl}`);
+    } else {
+      useAlert('Đã gửi yêu cầu auto-reply. AI sẽ phản hồi trong giây lát.');
+    }
   } catch (e) {
     useAlert('Không thể trigger auto-reply.');
   } finally {
