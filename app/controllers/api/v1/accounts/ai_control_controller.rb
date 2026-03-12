@@ -3,6 +3,8 @@ require 'uri'
 require 'json'
 
 class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
+  BOT_ACCESSIBLE_ACTIONS = %w[manager_daily_raw_messages].freeze
+
   before_action :authorize_account_update
 
   def train_faq
@@ -131,6 +133,186 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
       "[AiControl] review_payment_case_error account_id=#{Current.account.id} case_id=#{params[:case_id]} error=#{e.class}:#{e.message}"
     )
     render json: { error: 'Unable to review payment case', detail: e.message }, status: :bad_gateway
+  end
+
+  def manager_daily_overview
+    proxy_chatbotlevan_manager_get(
+      path: '/tools/staff/daily-message-overview',
+      payload: {
+        account_id: Current.account.id.to_s,
+        target_date: normalize_optional_date(params[:target_date]),
+        timezone_name: normalize_timezone_name(params[:timezone_name]),
+        limit: normalize_limit(params[:limit]),
+        max_conversations: normalize_optional_int(params[:max_conversations]),
+        max_messages_per_conversation: normalize_optional_int(params[:max_messages_per_conversation])
+      },
+      failure_message: 'Daily message overview request failed',
+      enricher: :enrich_manager_rows
+    )
+  end
+
+  def manager_daily_raw_messages
+    timezone_name = normalize_timezone_name(params[:timezone_name])
+    target_date = normalize_optional_date(params[:target_date])
+    window = resolve_manager_day_window(
+      target_date: target_date,
+      timezone_name: timezone_name
+    )
+
+    grouped_conversations = {}
+    message_total = 0
+
+    Message.includes(:sender, conversation: :contact)
+           .where(account_id: Current.account.id)
+           .where(created_at: window[:since]...window[:until])
+           .order(:created_at, :id)
+           .each do |message|
+      conversation = message.conversation
+      next unless conversation.present?
+
+      conversation_key = conversation.id.to_s
+      entry = grouped_conversations[conversation_key] ||= build_manager_raw_conversation_entry(conversation)
+      serialized_message = serialize_manager_raw_message(
+        message: message,
+        conversation: conversation
+      )
+      entry[:messages] << serialized_message
+      entry[:message_count] += 1
+      entry[:first_message_at] ||= serialized_message[:created_at]
+      entry[:last_message_at] = serialized_message[:created_at]
+      message_total += 1
+    end
+
+    conversations = grouped_conversations.values.sort_by { |item| item[:last_message_at].to_s }.reverse
+
+    render json: {
+      ok: true,
+      account_id: Current.account.id.to_s,
+      target_date: window[:target_date],
+      timezone: window[:timezone_name],
+      since: window[:since].utc.iso8601,
+      until: window[:until].utc.iso8601,
+      message_count: message_total,
+      conversation_count: conversations.length,
+      conversations: conversations,
+      fetched_at: Time.current.utc.iso8601
+    }, status: :ok
+  rescue ArgumentError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  rescue StandardError => e
+    Rails.logger.error(
+      "[AiControl] manager_daily_raw_messages_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}"
+    )
+    render json: { error: 'Daily raw messages query failed', detail: e.message }, status: :internal_server_error
+  end
+
+  def manager_ai_handoff_queue
+    proxy_chatbotlevan_manager_get(
+      path: '/tools/staff/ai-handoff-queue',
+      payload: {
+        account_id: Current.account.id.to_s,
+        timezone_name: normalize_timezone_name(params[:timezone_name]),
+        limit: normalize_limit(params[:limit]),
+        max_conversations: normalize_optional_int(params[:max_conversations])
+      },
+      failure_message: 'AI handoff queue request failed',
+      enricher: :enrich_manager_rows
+    )
+  end
+
+  def manager_sla_risk_queue
+    proxy_chatbotlevan_manager_get(
+      path: '/tools/staff/sla-risk-queue',
+      payload: {
+        account_id: Current.account.id.to_s,
+        risk_window_minutes: normalize_optional_int(params[:risk_window_minutes]),
+        limit: normalize_limit(params[:limit]),
+        max_conversations: normalize_optional_int(params[:max_conversations])
+      },
+      failure_message: 'SLA risk queue request failed',
+      enricher: :enrich_manager_rows
+    )
+  end
+
+  def manager_follow_up_due_queue
+    proxy_chatbotlevan_manager_get(
+      path: '/tools/staff/follow-up-due',
+      payload: {
+        account_id: Current.account.id.to_s,
+        stale_after_minutes: normalize_optional_int(params[:stale_after_minutes]),
+        limit: normalize_limit(params[:limit]),
+        max_conversations: normalize_optional_int(params[:max_conversations])
+      },
+      failure_message: 'Follow-up due queue request failed',
+      enricher: :enrich_manager_rows
+    )
+  end
+
+  def manager_unassigned_hot_queue
+    proxy_chatbotlevan_manager_get(
+      path: '/tools/staff/unassigned-hot-queue',
+      payload: {
+        account_id: Current.account.id.to_s,
+        min_waiting_minutes: normalize_optional_int(params[:min_waiting_minutes]),
+        limit: normalize_limit(params[:limit]),
+        max_conversations: normalize_optional_int(params[:max_conversations])
+      },
+      failure_message: 'Unassigned hot queue request failed',
+      enricher: :enrich_manager_rows
+    )
+  end
+
+  def manager_customer_360
+    conversation_id = params[:conversation_id].to_s.strip
+    if conversation_id.blank?
+      render json: { error: 'conversation_id is required' }, status: :unprocessable_entity
+      return
+    end
+
+    proxy_chatbotlevan_manager_get(
+      path: '/tools/staff/customer-360',
+      payload: {
+        account_id: Current.account.id.to_s,
+        conversation_id: conversation_id,
+        contact_id: params[:contact_id].to_s.strip.presence,
+        recent_message_limit: normalize_optional_int(params[:recent_message_limit]),
+        memory_limit: normalize_optional_int(params[:memory_limit]),
+        memory_query: params[:memory_query].to_s.strip.presence
+      },
+      failure_message: 'Customer 360 request failed',
+      enricher: :enrich_manager_customer_360
+    )
+  end
+
+  def manager_reply_gap_watch
+    proxy_chatbotlevan_manager_get(
+      path: '/tools/staff/reply-gap-watch',
+      payload: {
+        account_id: Current.account.id.to_s,
+        min_gap_minutes: normalize_optional_int(params[:min_gap_minutes]),
+        limit: normalize_limit(params[:limit]),
+        max_conversations: normalize_optional_int(params[:max_conversations])
+      },
+      failure_message: 'Reply gap watch request failed',
+      enricher: :enrich_manager_rows
+    )
+  end
+
+  def manager_priority_digest
+    proxy_chatbotlevan_manager_get(
+      path: '/tools/staff/priority-digest',
+      payload: {
+        account_id: Current.account.id.to_s,
+        limit: normalize_optional_int(params[:limit]),
+        max_conversations: normalize_optional_int(params[:max_conversations]),
+        risk_window_minutes: normalize_optional_int(params[:risk_window_minutes]),
+        min_waiting_minutes: normalize_optional_int(params[:min_waiting_minutes]),
+        stale_after_minutes: normalize_optional_int(params[:stale_after_minutes]),
+        min_gap_minutes: normalize_optional_int(params[:min_gap_minutes])
+      },
+      failure_message: 'Priority digest request failed',
+      enricher: :enrich_manager_rows
+    )
   end
 
   # ── Blocked Inbox Management (AI webhook control) ──
@@ -415,6 +597,8 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
   private
 
   def authorize_account_update
+    return if Current.user.is_a?(AgentBot) && BOT_ACCESSIBLE_ACTIONS.include?(action_name)
+
     authorize Current.account, :update?
   end
 
@@ -463,6 +647,33 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     return nil if parsed <= 0
 
     parsed
+  end
+
+  def normalize_optional_date(value)
+    raw = value.to_s.strip
+    return nil if raw.blank?
+    return raw if raw.match?(/\A\d{4}-\d{2}-\d{2}\z/)
+
+    nil
+  end
+
+  def normalize_timezone_name(value)
+    raw = value.to_s.strip
+    raw.present? ? raw : 'Asia/Bangkok'
+  end
+
+  def resolve_manager_day_window(target_date:, timezone_name:)
+    zone = ActiveSupport::TimeZone[timezone_name] || ActiveSupport::TimeZone['Bangkok'] || Time.zone
+    resolved_date = target_date.present? ? Date.iso8601(target_date) : zone.today
+    since_local = zone.local(resolved_date.year, resolved_date.month, resolved_date.day, 0, 0, 0)
+    until_local = since_local + 1.day
+
+    {
+      target_date: resolved_date.iso8601,
+      timezone_name: zone.tzinfo.name,
+      since: since_local.utc,
+      until: until_local.utc
+    }
   end
 
   def normalize_review_status(value)
@@ -523,6 +734,34 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     [parsed, 100_000].min
   end
 
+  def proxy_chatbotlevan_manager_get(path:, payload:, failure_message:, enricher: nil)
+    base_url = chatbotlevan_base_url
+    unless base_url.present?
+      render json: { error: 'CHATBOTLEVAN_BASE_URL is not configured' }, status: :unprocessable_entity
+      return
+    end
+
+    response = get_json("#{base_url}#{path}", payload.compact)
+    status = response.code.to_i
+    body = parse_json_body(response.body)
+
+    if status.between?(200, 299)
+      body = send(enricher, body) if enricher.present?
+      render json: body, status: :ok
+      return
+    end
+
+    Rails.logger.error(
+      "[AiControl] manager_proxy_failed account_id=#{Current.account.id} path=#{path} status=#{status} body=#{response.body}"
+    )
+    render json: { error: failure_message, detail: body }, status: :bad_gateway
+  rescue StandardError => e
+    Rails.logger.error(
+      "[AiControl] manager_proxy_error account_id=#{Current.account.id} path=#{path} error=#{e.class}:#{e.message}"
+    )
+    render json: { error: failure_message.sub('request failed', 'unavailable'), detail: e.message }, status: :bad_gateway
+  end
+
   def post_json(url, payload)
     uri = URI.parse(url)
     request = Net::HTTP::Post.new(uri.request_uri)
@@ -564,6 +803,54 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     { raw: raw_body.to_s }
   end
 
+  def build_manager_raw_conversation_entry(conversation)
+    {
+      conversation_id: conversation.id.to_s,
+      conversation_display_id: conversation.display_id,
+      contact_id: conversation.contact_id.to_s,
+      contact_name: resolve_contact_name(conversation.contact, conversation.contact_id),
+      status: conversation.status,
+      priority: conversation.priority,
+      inbox_id: conversation.inbox_id.to_s,
+      assignee_id: conversation.assignee_id&.to_s,
+      waiting_since: conversation.waiting_since&.utc&.iso8601,
+      labels: conversation.cached_label_list_array,
+      message_count: 0,
+      first_message_at: nil,
+      last_message_at: nil,
+      messages: []
+    }
+  end
+
+  def serialize_manager_raw_message(message:, conversation:)
+    {
+      id: message.id.to_s,
+      conversation_id: conversation.id.to_s,
+      conversation_display_id: conversation.display_id,
+      message_type: message.message_type,
+      message_type_code: message.message_type_before_type_cast,
+      content_type: message.content_type,
+      private: message.private?,
+      content: message.content,
+      created_at: message.created_at&.utc&.iso8601,
+      sender_id: message.sender_id&.to_s,
+      sender_type: message.sender_type,
+      sender_name: resolve_message_sender_name(message, conversation),
+      status: message.status,
+      source_id: message.source_id.presence,
+      content_attributes: message.content_attributes.presence,
+      additional_attributes: message.additional_attributes.presence
+    }.compact
+  end
+
+  def resolve_message_sender_name(message, conversation)
+    return message.sender.name if message.sender.respond_to?(:name) && message.sender.name.present?
+    return conversation.contact.name if message.incoming? && conversation.contact&.name.present?
+    return Current.user.name if message.outgoing? && Current.user&.name.present?
+
+    nil
+  end
+
   def enrich_payment_review_cases(body)
     return body unless body.is_a?(Hash)
 
@@ -601,6 +888,74 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     body
   end
 
+  def enrich_manager_rows(body)
+    return body unless body.is_a?(Hash)
+
+    row_keys = %w[items top_priorities]
+    conversation_ids = row_keys.flat_map do |key|
+      rows = body[key]
+      next [] unless rows.is_a?(Array)
+
+      rows.filter_map do |row|
+        next unless row.is_a?(Hash)
+
+        raw_id = row['conversation_id'].to_s.strip
+        next if raw_id.blank? || raw_id !~ /\A\d+\z/
+
+        raw_id
+      end
+    end.uniq
+    return body if conversation_ids.blank?
+
+    conversation_map = Current.account.conversations
+                              .includes(:contact)
+                              .where(id: conversation_ids)
+                              .index_by { |conversation| conversation.id.to_s }
+
+    row_keys.each do |key|
+      rows = body[key]
+      next unless rows.is_a?(Array)
+
+      rows.each do |row|
+        next unless row.is_a?(Hash)
+
+        conversation = conversation_map[row['conversation_id'].to_s.strip]
+        next unless conversation
+
+        contact = conversation.contact
+        row['conversation_display_id'] ||= conversation.display_id
+        row['contact_name'] ||= resolve_contact_name(contact, row['contact_id'])
+        row['contact_avatar_url'] ||= contact&.avatar_url
+        row['inbox_id'] ||= conversation.inbox_id
+      end
+    end
+
+    body
+  end
+
+  def enrich_manager_customer_360(body)
+    return body unless body.is_a?(Hash)
+
+    conversation_id = body['conversation_id'].to_s.strip
+    return body if conversation_id.blank? || conversation_id !~ /\A\d+\z/
+
+    conversation = Current.account.conversations.includes(:contact).find_by(id: conversation_id)
+    return body unless conversation
+
+    body['conversation'] = {} unless body['conversation'].is_a?(Hash)
+    body['conversation']['display_id'] ||= conversation.display_id
+    body['conversation']['inbox_id'] ||= conversation.inbox_id
+
+    contact = conversation.contact
+    body['contact_profile'] = {} unless body['contact_profile'].is_a?(Hash)
+    body['contact_profile']['name'] ||= resolve_contact_name(contact, body['contact_id'])
+    body['contact_profile']['avatar_url'] ||= contact&.avatar_url
+    body['contact_profile']['email'] ||= contact&.email
+    body['contact_profile']['phone_number'] ||= contact&.phone_number
+
+    body
+  end
+
   def resolve_contact_name_for_payment_case(row, contact)
     return contact.name if contact&.name.present?
     return contact.phone_number if contact&.phone_number.present?
@@ -608,6 +963,17 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
 
     fallback_contact_id = row['contact_id'].to_s.strip
     return "Contact ##{fallback_contact_id}" if fallback_contact_id.present?
+
+    'Khách hàng'
+  end
+
+  def resolve_contact_name(contact, fallback_contact_id = nil)
+    return contact.name if contact&.name.present?
+    return contact.phone_number if contact&.phone_number.present?
+    return contact.email if contact&.email.present?
+
+    fallback = fallback_contact_id.to_s.strip
+    return "Contact ##{fallback}" if fallback.present?
 
     'Khách hàng'
   end

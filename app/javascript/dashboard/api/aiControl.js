@@ -43,13 +43,16 @@ class AiControlAPI extends ApiClient {
     return axios.get(`${this.url}/payment_review_cases`, { params });
   }
 
-  reviewPaymentCase(caseId, {
-    reviewAction,
-    reviewedBy,
-    reviewNote,
-    data,
-    triggerPostPaymentSkill = true,
-  } = {}) {
+  reviewPaymentCase(
+    caseId,
+    {
+      reviewAction,
+      reviewedBy,
+      reviewNote,
+      data,
+      triggerPostPaymentSkill = true,
+    } = {}
+  ) {
     return axios.post(`${this.url}/payment_review_cases/${caseId}/review`, {
       review_action: reviewAction,
       reviewed_by: reviewedBy,
@@ -59,16 +62,135 @@ class AiControlAPI extends ApiClient {
     });
   }
 
+  getManagerDailyOverview({
+    targetDate,
+    timezoneName = 'Asia/Bangkok',
+    limit = 12,
+    maxConversations,
+    maxMessagesPerConversation = 3,
+  } = {}) {
+    const params = {
+      timezone_name: timezoneName,
+      limit,
+      max_messages_per_conversation: maxMessagesPerConversation,
+    };
+    if (targetDate) params.target_date = targetDate;
+    if (maxConversations) params.max_conversations = maxConversations;
+    return axios.get(`${this.url}/manager/daily_overview`, { params });
+  }
+
+  getManagerAiHandoffQueue({
+    timezoneName = 'Asia/Bangkok',
+    limit = 8,
+    maxConversations,
+  } = {}) {
+    const params = { timezone_name: timezoneName, limit };
+    if (maxConversations) params.max_conversations = maxConversations;
+    return axios.get(`${this.url}/manager/ai_handoff_queue`, { params });
+  }
+
+  getManagerSlaRiskQueue({
+    riskWindowMinutes = 30,
+    limit = 6,
+    maxConversations,
+  } = {}) {
+    const params = {
+      risk_window_minutes: riskWindowMinutes,
+      limit,
+    };
+    if (maxConversations) params.max_conversations = maxConversations;
+    return axios.get(`${this.url}/manager/sla_risk_queue`, { params });
+  }
+
+  getManagerFollowUpDueQueue({
+    staleAfterMinutes = 60,
+    limit = 6,
+    maxConversations,
+  } = {}) {
+    const params = {
+      stale_after_minutes: staleAfterMinutes,
+      limit,
+    };
+    if (maxConversations) params.max_conversations = maxConversations;
+    return axios.get(`${this.url}/manager/follow_up_due_queue`, { params });
+  }
+
+  getManagerUnassignedHotQueue({
+    minWaitingMinutes = 5,
+    limit = 6,
+    maxConversations,
+  } = {}) {
+    const params = {
+      min_waiting_minutes: minWaitingMinutes,
+      limit,
+    };
+    if (maxConversations) params.max_conversations = maxConversations;
+    return axios.get(`${this.url}/manager/unassigned_hot_queue`, { params });
+  }
+
+  getManagerCustomer360({
+    conversationId,
+    contactId,
+    recentMessageLimit = 8,
+    memoryLimit = 5,
+    memoryQuery,
+  } = {}) {
+    const params = {
+      conversation_id: conversationId,
+      recent_message_limit: recentMessageLimit,
+      memory_limit: memoryLimit,
+    };
+    if (contactId) params.contact_id = contactId;
+    if (memoryQuery) params.memory_query = memoryQuery;
+    return axios.get(`${this.url}/manager/customer_360`, { params });
+  }
+
+  getManagerReplyGapWatch({
+    minGapMinutes = 5,
+    limit = 6,
+    maxConversations,
+  } = {}) {
+    const params = {
+      min_gap_minutes: minGapMinutes,
+      limit,
+    };
+    if (maxConversations) params.max_conversations = maxConversations;
+    return axios.get(`${this.url}/manager/reply_gap_watch`, { params });
+  }
+
+  getManagerPriorityDigest({
+    limit = 10,
+    maxConversations,
+    riskWindowMinutes = 30,
+    minWaitingMinutes = 5,
+    staleAfterMinutes = 60,
+    minGapMinutes = 5,
+  } = {}) {
+    const params = {
+      limit,
+      risk_window_minutes: riskWindowMinutes,
+      min_waiting_minutes: minWaitingMinutes,
+      stale_after_minutes: staleAfterMinutes,
+      min_gap_minutes: minGapMinutes,
+    };
+    if (maxConversations) params.max_conversations = maxConversations;
+    return axios.get(`${this.url}/manager/priority_digest`, { params });
+  }
+
   getBlockedInboxes() {
     return axios.get(`${this.url}/blocked_inboxes`);
   }
 
   blockInbox(inboxId) {
-    return axios.post(`${this.url}/blocked_inboxes`, { inbox_id: String(inboxId) });
+    return axios.post(`${this.url}/blocked_inboxes`, {
+      inbox_id: String(inboxId),
+    });
   }
 
   unblockInbox(inboxId) {
-    return axios.delete(`${this.url}/blocked_inboxes`, { data: { inbox_id: String(inboxId) } });
+    return axios.delete(`${this.url}/blocked_inboxes`, {
+      data: { inbox_id: String(inboxId) },
+    });
   }
 
   toggleAllInboxes(inboxIds, actionType) {
@@ -114,7 +236,10 @@ class AiControlAPI extends ApiClient {
     if (commentWebhookUrl) {
       payload.comment_webhook_url = String(commentWebhookUrl).trim();
     }
-    return axios.post(`${this.url}/comments/${conversationId}/auto_reply`, payload);
+    return axios.post(
+      `${this.url}/comments/${conversationId}/auto_reply`,
+      payload
+    );
   }
 }
 

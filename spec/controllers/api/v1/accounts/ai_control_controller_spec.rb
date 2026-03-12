@@ -22,7 +22,7 @@ RSpec.describe 'AiControlController', type: :request do
     end
 
     context 'when it is an authenticated user' do
-      let(:user) { create(:user, account: account) }
+      let(:user) { create(:user, account: account, role: :administrator) }
       let(:contact) { create(:contact, account: account, name: 'Nguyen Van A') }
       let(:conversation) { create(:conversation, account: account, contact: contact) }
 
@@ -131,7 +131,7 @@ RSpec.describe 'AiControlController', type: :request do
     end
 
     context 'when it is an authenticated user' do
-      let(:user) { create(:user, account: account) }
+      let(:user) { create(:user, account: account, role: :administrator) }
 
       it 'forwards review action to chatbotlevan' do
         with_modified_env(
@@ -180,9 +180,169 @@ RSpec.describe 'AiControlController', type: :request do
     end
   end
 
+  describe 'GET /api/v1/accounts/{account.id}/ai_control/manager/*' do
+    context 'when it is an authenticated user' do
+      let(:user) { create(:user, account: account, role: :administrator) }
+      let(:contact) { create(:contact, account: account, name: 'Tran Thi B') }
+      let(:conversation) { create(:conversation, account: account, contact: contact) }
+
+      it 'returns daily overview proxy data and enriches local conversation fields' do
+        with_modified_env(
+          'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
+          'CHATBOTLEVAN_API_TOKEN' => 'test-token'
+        ) do
+          stub_request(:get, 'http://chatbotlevan.test/tools/staff/daily-message-overview')
+            .with(
+              query: hash_including(
+                'account_id' => account.id.to_s,
+                'target_date' => '2026-03-12',
+                'timezone_name' => 'Asia/Bangkok',
+                'limit' => '5'
+              ),
+              headers: {
+                'Authorization' => 'Bearer test-token'
+              }
+            )
+            .to_return(
+              status: 200,
+              body: {
+                ok: true,
+                items: [
+                  {
+                    conversation_id: conversation.id.to_s,
+                    topic_guess: 'dat lich',
+                    message_count_in_day: 3
+                  }
+                ]
+              }.to_json,
+              headers: { 'Content-Type' => 'application/json' }
+            )
+
+          get "/api/v1/accounts/#{account.id}/ai_control/manager/daily_overview",
+              headers: user.create_new_auth_token,
+              params: { target_date: '2026-03-12', timezone_name: 'Asia/Bangkok', limit: 5 },
+              as: :json
+
+          expect(response).to have_http_status(:ok)
+          json = response.parsed_body
+          expect(json.dig('items', 0, 'conversation_display_id')).to eq(conversation.display_id)
+          expect(json.dig('items', 0, 'contact_name')).to eq('Tran Thi B')
+        end
+      end
+
+      it 'returns raw daily messages directly from Chatwoot DB grouped by conversation' do
+        outgoing_user = create(:user, account: account, role: :administrator, name: 'Ops Lead')
+        target_time = Time.find_zone('UTC').parse('2026-03-12 02:15:00')
+
+        create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: contact,
+          message_type: :incoming,
+          content: 'Em muốn hỏi về học phí khóa học hôm nay',
+          created_at: target_time
+        )
+        create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: outgoing_user,
+          message_type: :outgoing,
+          content: 'Bên mình đã nhận câu hỏi của bạn',
+          created_at: target_time + 3.minutes
+        )
+        create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: outgoing_user,
+          message_type: :outgoing,
+          private: true,
+          content: 'Nhân viên note nội bộ',
+          created_at: target_time + 5.minutes
+        )
+
+        get "/api/v1/accounts/#{account.id}/ai_control/manager/daily_raw_messages",
+            headers: user.create_new_auth_token,
+            params: { target_date: '2026-03-12', timezone_name: 'Asia/Bangkok' },
+            as: :json
+
+        expect(response).to have_http_status(:ok)
+        json = response.parsed_body
+        expect(json['ok']).to eq(true)
+        expect(json['target_date']).to eq('2026-03-12')
+        expect(json['message_count']).to be >= 3
+        expect(json['conversation_count']).to eq(1)
+        expect(json.dig('conversations', 0, 'conversation_id')).to eq(conversation.id.to_s)
+        expect(json.dig('conversations', 0, 'contact_name')).to eq('Tran Thi B')
+        contents = json.dig('conversations', 0, 'messages').map { |item| item['content'] }
+        incoming_row = json.dig('conversations', 0, 'messages').find { |item| item['content'] == 'Em muốn hỏi về học phí khóa học hôm nay' }
+        private_row = json.dig('conversations', 0, 'messages').find { |item| item['content'] == 'Nhân viên note nội bộ' }
+        expect(contents).to include('Em muốn hỏi về học phí khóa học hôm nay')
+        expect(contents).to include('Bên mình đã nhận câu hỏi của bạn')
+        expect(incoming_row['message_type']).to eq('incoming')
+        expect(private_row['private']).to eq(true)
+      end
+
+      it 'returns customer 360 proxy data and enriches contact metadata from chatwoot' do
+        with_modified_env(
+          'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
+          'CHATBOTLEVAN_API_TOKEN' => 'test-token'
+        ) do
+          stub_request(:get, 'http://chatbotlevan.test/tools/staff/customer-360')
+            .with(
+              query: hash_including(
+                'account_id' => account.id.to_s,
+                'conversation_id' => conversation.id.to_s,
+                'memory_query' => 'paypal'
+              ),
+              headers: {
+                'Authorization' => 'Bearer test-token'
+              }
+            )
+            .to_return(
+              status: 200,
+              body: {
+                ok: true,
+                conversation_id: conversation.id.to_s,
+                conversation: { labels: ['ai_handoff'] },
+                contact_id: contact.id.to_s,
+                contact_profile: {},
+                memories: []
+              }.to_json,
+              headers: { 'Content-Type' => 'application/json' }
+            )
+
+          get "/api/v1/accounts/#{account.id}/ai_control/manager/customer_360",
+              headers: user.create_new_auth_token,
+              params: { conversation_id: conversation.id, memory_query: 'paypal' },
+              as: :json
+
+          expect(response).to have_http_status(:ok)
+          json = response.parsed_body
+          expect(json.dig('conversation', 'display_id')).to eq(conversation.display_id)
+          expect(json.dig('contact_profile', 'name')).to eq('Tran Thi B')
+        end
+      end
+
+      it 'returns unprocessable entity when manager customer 360 misses conversation_id' do
+        get "/api/v1/accounts/#{account.id}/ai_control/manager/customer_360",
+            headers: user.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['error']).to eq('conversation_id is required')
+      end
+    end
+  end
+
   describe 'POST /api/v1/accounts/{account.id}/ai_control/comments/:conversation_id/auto_reply' do
     context 'when it is an authenticated user' do
-      let(:user) { create(:user, account: account) }
+      let(:user) { create(:user, account: account, role: :administrator) }
       let(:inbox) { create(:inbox, account: account) }
       let(:social_comment) do
         SocialComment.create!(
@@ -310,7 +470,7 @@ RSpec.describe 'AiControlController', type: :request do
 
   describe 'GET/PUT /api/v1/accounts/{account.id}/ai_control/comment_webhook_config' do
     context 'when it is an authenticated user' do
-      let(:user) { create(:user, account: account) }
+      let(:user) { create(:user, account: account, role: :administrator) }
 
       it 'saves and returns comment webhook config' do
         put "/api/v1/accounts/#{account.id}/ai_control/comment_webhook_config",
