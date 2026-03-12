@@ -288,6 +288,52 @@ RSpec.describe 'AiControlController', type: :request do
         expect(private_row['private']).to eq(true)
       end
 
+      it 'returns bulk conversation messages grouped in one payload' do
+        outgoing_user = create(:user, account: account, role: :administrator, name: 'Ops Lead')
+        target_time = Time.find_zone('UTC').parse('2026-03-12 02:15:00')
+
+        create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: contact,
+          message_type: :incoming,
+          content: 'Em cần chị kiểm tra giúp đơn này',
+          created_at: target_time
+        )
+        create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: outgoing_user,
+          message_type: :outgoing,
+          content: 'Bên mình đã nhận thông tin của bạn',
+          created_at: target_time + 3.minutes
+        )
+
+        post "/api/v1/accounts/#{account.id}/ai_control/manager/conversation_messages",
+             headers: user.create_new_auth_token,
+             params: {
+               conversation_ids: [conversation.id.to_s],
+               limit: 5
+             },
+             as: :json
+
+        expect(response).to have_http_status(:ok)
+        json = response.parsed_body
+        expect(json['ok']).to eq(true)
+        expect(json['conversation_count']).to eq(1)
+        expect(json['limit_per_conversation']).to eq(5)
+        expect(json['total_message_count']).to be >= 2
+        rows = json.dig('messages_by_conversation', conversation.id.to_s)
+        contents = rows.map { |item| item['content'] }
+        expect(rows.length).to be >= 2
+        expect(contents).to include('Em cần chị kiểm tra giúp đơn này')
+        expect(contents).to include('Bên mình đã nhận thông tin của bạn')
+      end
+
       it 'returns customer 360 proxy data and enriches contact metadata from chatwoot' do
         with_modified_env(
           'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',

@@ -4,7 +4,7 @@ module AccessTokenAuthHelper
     'api/v1/accounts/conversations/messages' => ['create'],
     'api/v1/accounts/conversations/assignments' => ['create'],
     'api/v1/accounts/captain/assistant_responses' => ['semantic_search'],
-    'api/v1/accounts/ai_control' => ['manager_daily_raw_messages']
+    'api/v1/accounts/ai_control' => ['manager_daily_raw_messages', 'manager_conversation_messages']
   }.freeze
 
   def ensure_access_token

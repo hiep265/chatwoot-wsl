@@ -96,6 +96,7 @@ Rails.application.routes.draw do
           post 'ai_control/payment_review_cases/:case_id/review', to: 'ai_control#review_payment_review_case'
           get 'ai_control/manager/daily_overview', to: 'ai_control#manager_daily_overview'
           get 'ai_control/manager/daily_raw_messages', to: 'ai_control#manager_daily_raw_messages'
+          post 'ai_control/manager/conversation_messages', to: 'ai_control#manager_conversation_messages'
           get 'ai_control/manager/ai_handoff_queue', to: 'ai_control#manager_ai_handoff_queue'
           get 'ai_control/manager/sla_risk_queue', to: 'ai_control#manager_sla_risk_queue'
           get 'ai_control/manager/follow_up_due_queue', to: 'ai_control#manager_follow_up_due_queue'

@@ -3,7 +3,7 @@ require 'uri'
 require 'json'
 
 class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
-  BOT_ACCESSIBLE_ACTIONS = %w[manager_daily_raw_messages].freeze
+  BOT_ACCESSIBLE_ACTIONS = %w[manager_daily_raw_messages manager_conversation_messages].freeze
 
   before_action :authorize_account_update
 
@@ -204,6 +204,58 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
       "[AiControl] manager_daily_raw_messages_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}"
     )
     render json: { error: 'Daily raw messages query failed', detail: e.message }, status: :internal_server_error
+  end
+
+  def manager_conversation_messages
+    conversation_ids = normalize_conversation_ids(params[:conversation_ids])
+    if conversation_ids.blank?
+      render json: { error: 'conversation_ids is required' }, status: :unprocessable_entity
+      return
+    end
+
+    limit_per_conversation = normalize_manager_message_limit(
+      params[:limit_per_conversation].presence || params[:limit]
+    )
+    grouped_messages = conversation_ids.each_with_object({}) do |conversation_id, memo|
+      memo[conversation_id] = []
+    end
+    message_total = 0
+
+    Message.includes(:sender, conversation: :contact)
+           .where(account_id: Current.account.id, conversation_id: conversation_ids)
+           .order(:conversation_id, created_at: :desc, id: :desc)
+           .each do |message|
+      conversation = message.conversation
+      next unless conversation.present?
+
+      conversation_key = conversation.id.to_s
+      bucket = grouped_messages[conversation_key]
+      next unless bucket
+      next if bucket.length >= limit_per_conversation
+
+      bucket << serialize_manager_raw_message(
+        message: message,
+        conversation: conversation
+      )
+      message_total += 1
+    end
+
+    grouped_messages.each_value(&:reverse!)
+
+    render json: {
+      ok: true,
+      account_id: Current.account.id.to_s,
+      conversation_count: conversation_ids.length,
+      limit_per_conversation: limit_per_conversation,
+      total_message_count: message_total,
+      messages_by_conversation: grouped_messages,
+      fetched_at: Time.current.utc.iso8601
+    }, status: :ok
+  rescue StandardError => e
+    Rails.logger.error(
+      "[AiControl] manager_conversation_messages_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}"
+    )
+    render json: { error: 'Conversation messages query failed', detail: e.message }, status: :internal_server_error
   end
 
   def manager_ai_handoff_queue
@@ -725,6 +777,32 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     parsed = value.to_i
     parsed = 50 if parsed <= 0
     [parsed, 200].min
+  end
+
+  def normalize_manager_message_limit(value)
+    parsed = value.to_i
+    parsed = 120 if parsed <= 0
+    [parsed, 200].min
+  end
+
+  def normalize_conversation_ids(value)
+    raw_values =
+      case value
+      when Array
+        value
+      when String
+        value.split(',')
+      else
+        []
+      end
+
+    raw_values.filter_map do |item|
+      raw_id = item.to_s.strip
+      next if raw_id.blank?
+      next unless raw_id.match?(/\A\d+\z/)
+
+      raw_id
+    end.uniq.first(500)
   end
 
   def normalize_offset(value)
