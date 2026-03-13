@@ -180,6 +180,53 @@ RSpec.describe 'AiControlController', type: :request do
     end
   end
 
+  describe 'DELETE /api/v1/accounts/{account.id}/ai_control/payment_review_cases/:case_id' do
+    context 'when it is an unauthenticated user' do
+      it 'returns unauthorized' do
+        delete "/api/v1/accounts/#{account.id}/ai_control/payment_review_cases/case-001",
+               as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when it is an authenticated user' do
+      let(:user) { create(:user, account: account, role: :administrator) }
+
+      it 'forwards delete action to chatbotlevan' do
+        with_modified_env(
+          'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
+          'CHATBOTLEVAN_API_TOKEN' => 'test-token'
+        ) do
+          stub_request(:delete, 'http://chatbotlevan.test/tools/payment-review-cases/case-001')
+            .with(
+              query: hash_including('deleted_by' => user.email),
+              headers: { 'Authorization' => 'Bearer test-token' }
+            )
+            .to_return(
+              status: 200,
+              body: {
+                success: true,
+                deleted: true,
+                case_id: 'case-001'
+              }.to_json,
+              headers: { 'Content-Type' => 'application/json' }
+            )
+
+          delete "/api/v1/accounts/#{account.id}/ai_control/payment_review_cases/case-001",
+                 headers: user.create_new_auth_token,
+                 as: :json
+
+          expect(response).to have_http_status(:ok)
+          json = response.parsed_body
+          expect(json['success']).to eq(true)
+          expect(json['deleted']).to eq(true)
+          expect(json['case_id']).to eq('case-001')
+        end
+      end
+    end
+  end
+
   describe 'GET /api/v1/accounts/{account.id}/ai_control/manager/*' do
     context 'when it is an authenticated user' do
       let(:user) { create(:user, account: account, role: :administrator) }

@@ -62,6 +62,14 @@ class AiControlAPI extends ApiClient {
     });
   }
 
+  deletePaymentCase(caseId, { deletedBy } = {}) {
+    return axios.delete(`${this.url}/payment_review_cases/${caseId}`, {
+      params: {
+        deleted_by: deletedBy,
+      },
+    });
+  }
+
   getManagerDailyOverview({
     targetDate,
     timezoneName = 'Asia/Bangkok',

@@ -62,18 +62,7 @@ const paymentReviewActionLoading = ref(new Set());
 const isPaymentReviewLoadingMore = ref(false);
 
 const paymentReviewTableContainer = ref(null);
-const operationsTargetDate = ref(
-  new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 10)
-);
-const managerPriorityDigest = ref({ source_counts: {}, top_priorities: [] });
-const managerDailyOverview = ref([]);
 const managerAiHandoffQueue = ref([]);
-const managerSlaRiskQueue = ref([]);
-const managerFollowUpQueue = ref([]);
-const managerUnassignedHotQueue = ref([]);
-const managerReplyGapQueue = ref([]);
 const isManagerQueuesLoading = ref(false);
 const managerQueuesError = ref('');
 const customer360 = ref(null);
@@ -160,50 +149,6 @@ const isRiskBannerBlinking = ref(false);
 const riskBannerText = ref('');
 const riskAudio = ref(null);
 
-const managerSourceCounts = computed(() => {
-  return managerPriorityDigest.value?.source_counts || {};
-});
-
-const managerTopPriorities = computed(() => {
-  const rows = managerPriorityDigest.value?.top_priorities;
-  return Array.isArray(rows) ? rows : [];
-});
-
-const managerRadarCards = computed(() => {
-  return [
-    {
-      key: 'ai_handoff',
-      label: 'Handoff chờ',
-      tone: 'ruby',
-      count: Number(managerSourceCounts.value?.ai_handoff || 0),
-    },
-    {
-      key: 'sla_risk',
-      label: 'SLA rủi ro',
-      tone: 'amber',
-      count: Number(managerSourceCounts.value?.sla_risk || 0),
-    },
-    {
-      key: 'follow_up_due',
-      label: 'Follow-up tới hạn',
-      tone: 'blue',
-      count: Number(managerSourceCounts.value?.follow_up_due || 0),
-    },
-    {
-      key: 'reply_gap_watch',
-      label: 'Khách nhắn thêm',
-      tone: 'teal',
-      count: Number(managerSourceCounts.value?.reply_gap_watch || 0),
-    },
-    {
-      key: 'unassigned_hot',
-      label: 'Chưa assign nóng',
-      tone: 'slate',
-      count: Number(managerSourceCounts.value?.unassigned_hot || 0),
-    },
-  ];
-});
-
 const aiControlConversationId = computed(
   () => route.params.conversation_id || 0
 );
@@ -217,39 +162,6 @@ const adminPanelRoute = computed(() => {
 const hasSelectedConversation = computed(() => {
   const id = String(aiControlConversationId.value || '').trim();
   return Boolean(id && id !== '0');
-});
-
-const managerMiniQueues = computed(() => {
-  return [
-    {
-      key: 'sla',
-      label: 'SLA rủi ro',
-      items: managerSlaRiskQueue.value,
-      metricKey: 'minutes_to_breach',
-      metricPrefix: 'Còn',
-    },
-    {
-      key: 'follow_up',
-      label: 'Follow-up tới hạn',
-      items: managerFollowUpQueue.value,
-      metricKey: 'overdue_minutes',
-      metricPrefix: 'Trễ',
-    },
-    {
-      key: 'unassigned',
-      label: 'Chưa assign nóng',
-      items: managerUnassignedHotQueue.value,
-      metricKey: 'waiting_minutes',
-      metricPrefix: 'Chờ',
-    },
-    {
-      key: 'reply_gap',
-      label: 'Khách nhắn thêm',
-      items: managerReplyGapQueue.value,
-      metricKey: 'gap_minutes',
-      metricPrefix: 'Im lặng',
-    },
-  ];
 });
 
 // Label management state
@@ -679,6 +591,48 @@ const confirmPaymentCase = async item => {
   }
 };
 
+const deletePaymentCase = async item => {
+  const caseId = String(item?.id || '').trim();
+  if (!caseId) return;
+  if (isPaymentCaseActionLoading(caseId)) return;
+
+  const confirmed = window.confirm(
+    `Xóa case xác minh thanh toán của ${paymentContactName(item)}?`
+  );
+  if (!confirmed) return;
+
+  paymentReviewLastError.value = '';
+  paymentReviewActionLoading.value = new Set([
+    ...Array.from(paymentReviewActionLoading.value || []),
+    caseId,
+  ]);
+
+  try {
+    const response = await AiControlAPI.deletePaymentCase(caseId);
+    const result = response?.data || {};
+    if (!result?.success) {
+      const message =
+        result?.message || result?.error || 'Không thể xóa case thanh toán.';
+      throw new Error(String(message));
+    }
+
+    useAlert('Đã xóa case khỏi bảng chờ xác minh thanh toán.');
+    await fetchPaymentReviewCases();
+  } catch (e) {
+    const message =
+      e?.response?.data?.error ||
+      e?.response?.data?.detail?.error ||
+      e?.message ||
+      'Không thể xóa case thanh toán.';
+    paymentReviewLastError.value = String(message);
+    useAlert(paymentReviewLastError.value);
+  } finally {
+    const next = new Set(paymentReviewActionLoading.value || []);
+    next.delete(caseId);
+    paymentReviewActionLoading.value = next;
+  }
+};
+
 const formatPercent = value => {
   if (!value) return 0;
   if (value > 0 && value < 0.1) return 0.1;
@@ -1038,68 +992,12 @@ const formatQueueAge = minutes => {
   return `${hours} giờ ${remain} phút`;
 };
 
-const miniQueueMetricText = (queueKey, item) => {
-  if (queueKey === 'sla') {
-    const minutes = Number(item?.minutes_to_breach || 0);
-    return minutes <= 0
-      ? `Trễ ${formatQueueAge(minutes)}`
-      : `Còn ${formatQueueAge(minutes)}`;
-  }
-  if (queueKey === 'follow_up') {
-    return `Trễ ${formatQueueAge(item?.overdue_minutes)}`;
-  }
-  if (queueKey === 'unassigned') {
-    return `Chờ ${formatQueueAge(item?.waiting_minutes)}`;
-  }
-  if (queueKey === 'reply_gap') {
-    return `Im lặng ${formatQueueAge(item?.gap_minutes)}`;
-  }
-  return formatQueueAge(item?.waiting_minutes);
-};
-
-const priorityBucketLabel = bucket => {
-  const key = String(bucket || '').trim().toLowerCase();
-  if (key === 'ai_handoff') return 'Handoff';
-  if (key === 'sla_risk') return 'SLA';
-  if (key === 'follow_up_due') return 'Follow-up';
-  if (key === 'reply_gap_watch') return 'Reply gap';
-  if (key === 'unassigned_hot') return 'Chưa assign';
-  return key || 'Queue';
-};
-
-const priorityBucketClass = bucket => {
-  const key = String(bucket || '').trim().toLowerCase();
-  if (key === 'ai_handoff') return 'bg-n-ruby-3 text-n-ruby-12';
-  if (key === 'sla_risk') return 'bg-n-amber-3 text-n-amber-12';
-  if (key === 'follow_up_due') return 'bg-n-blue-3 text-n-blue-12';
-  if (key === 'reply_gap_watch') return 'bg-n-teal-3 text-n-teal-12';
-  return 'bg-n-slate-3 text-n-slate-12';
-};
-
-const radarCardClass = tone => {
-  if (tone === 'ruby') return 'from-n-ruby-2 to-n-ruby-3 outline-n-ruby-4 text-n-ruby-12';
-  if (tone === 'amber') return 'from-n-amber-2 to-n-amber-3 outline-n-amber-4 text-n-amber-12';
-  if (tone === 'blue') return 'from-n-blue-2 to-n-blue-3 outline-n-blue-4 text-n-blue-12';
-  if (tone === 'teal') return 'from-n-teal-2 to-n-teal-3 outline-n-teal-4 text-n-teal-12';
-  return 'from-n-slate-2 to-n-slate-3 outline-n-slate-4 text-n-slate-12';
-};
-
 const queueItemTitle = item => {
   return (
     item?.contact_name ||
     item?.contact_id ||
     item?.conversation_display_id ||
     `Conversation #${item?.conversation_id || '--'}`
-  );
-};
-
-const queueItemSummary = item => {
-  return (
-    item?.issue_summary ||
-    item?.last_customer_message ||
-    item?.reason ||
-    item?.topic_guess ||
-    'Chưa có mô tả'
   );
 };
 
@@ -1123,64 +1021,19 @@ const fetchManagerQueues = async () => {
   managerQueuesError.value = '';
 
   try {
-    const [
-      dailyResp,
-      handoffResp,
-      slaResp,
-      followUpResp,
-      unassignedResp,
-      replyGapResp,
-      priorityResp,
-    ] = await Promise.all([
-      AiControlAPI.getManagerDailyOverview({
-        targetDate: operationsTargetDate.value,
-        limit: 12,
-        maxConversations: 200,
-        maxMessagesPerConversation: 3,
-      }),
-      AiControlAPI.getManagerAiHandoffQueue({ limit: 8, maxConversations: 200 }),
-      AiControlAPI.getManagerSlaRiskQueue({ limit: 6, maxConversations: 200 }),
-      AiControlAPI.getManagerFollowUpDueQueue({ limit: 6, maxConversations: 200 }),
-      AiControlAPI.getManagerUnassignedHotQueue({ limit: 6, maxConversations: 200 }),
-      AiControlAPI.getManagerReplyGapWatch({ limit: 6, maxConversations: 200 }),
-      AiControlAPI.getManagerPriorityDigest({ limit: 10, maxConversations: 200 }),
-    ]);
-
-    managerDailyOverview.value = Array.isArray(dailyResp?.data?.items)
-      ? dailyResp.data.items
-      : [];
+    const handoffResp = await AiControlAPI.getManagerAiHandoffQueue({
+      limit: 20,
+      maxConversations: 200,
+    });
     managerAiHandoffQueue.value = Array.isArray(handoffResp?.data?.items)
       ? handoffResp.data.items
       : [];
-    managerSlaRiskQueue.value = Array.isArray(slaResp?.data?.items)
-      ? slaResp.data.items
-      : [];
-    managerFollowUpQueue.value = Array.isArray(followUpResp?.data?.items)
-      ? followUpResp.data.items
-      : [];
-    managerUnassignedHotQueue.value = Array.isArray(unassignedResp?.data?.items)
-      ? unassignedResp.data.items
-      : [];
-    managerReplyGapQueue.value = Array.isArray(replyGapResp?.data?.items)
-      ? replyGapResp.data.items
-      : [];
-    managerPriorityDigest.value =
-      priorityResp?.data && typeof priorityResp.data === 'object'
-        ? priorityResp.data
-        : { source_counts: {}, top_priorities: [] };
   } catch (error) {
-    managerDailyOverview.value = [];
     managerAiHandoffQueue.value = [];
-    managerSlaRiskQueue.value = [];
-    managerFollowUpQueue.value = [];
-    managerUnassignedHotQueue.value = [];
-    managerReplyGapQueue.value = [];
-    managerPriorityDigest.value = { source_counts: {}, top_priorities: [] };
-
     managerQueuesError.value =
       error?.response?.data?.error ||
       error?.response?.data?.detail?.error ||
-      'Không tải được radar vận hành manager.';
+      'Không tải được hàng chờ handoff.';
     useAlert(managerQueuesError.value);
   } finally {
     isManagerQueuesLoading.value = false;
@@ -1760,32 +1613,24 @@ onBeforeUnmount(() => {
                 <div class="flex flex-wrap items-center justify-between gap-4">
                   <div class="flex flex-col gap-1">
                     <div class="text-lg font-semibold tracking-tight text-n-slate-12">
-                      Manager Radar
+                      Handoff đang chờ nhân viên
                     </div>
                     <div class="text-sm font-medium text-n-slate-11/80">
-                      Cùng một nguồn dữ liệu với manager agent: hôm nay ai đang nhắn, ai đang chờ, case nào cần ưu tiên trước.
+                      Chỉ giữ lại queue `ai_handoff` chưa được phản hồi công khai sau handoff.
                     </div>
                   </div>
-                  <div class="flex items-center gap-3">
-                    <input
-                      v-model="operationsTargetDate"
-                      type="date"
-                      class="h-9 rounded-lg outline outline-1 outline-n-slate-4 bg-n-background px-3 text-sm font-medium text-n-slate-12 focus:outline-n-blue-6"
-                      @change="fetchManagerQueues"
-                    />
-                    <Button
-                      color="slate"
-                      size="sm"
-                      class="h-9 shadow-sm"
-                      :is-loading="isManagerQueuesLoading"
-                      label="Làm mới radar"
-                      @click="fetchManagerQueues"
-                    />
-                  </div>
+                  <Button
+                    color="slate"
+                    size="sm"
+                    class="h-9 shadow-sm"
+                    :is-loading="isManagerQueuesLoading"
+                    label="Làm mới handoff"
+                    @click="fetchManagerQueues"
+                  />
                 </div>
               </div>
 
-              <div class="p-6 flex flex-col gap-6">
+              <div class="p-6 flex flex-col gap-4">
                 <div
                   v-if="managerQueuesError"
                   class="rounded-xl border border-n-ruby-4 bg-n-ruby-2 px-4 py-3 text-sm font-medium text-n-ruby-11"
@@ -1793,218 +1638,56 @@ onBeforeUnmount(() => {
                   {{ managerQueuesError }}
                 </div>
 
-                <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                  <div
-                    v-for="card in managerRadarCards"
-                    :key="card.key"
-                    class="rounded-2xl outline outline-1 bg-gradient-to-br p-4 shadow-sm"
-                    :class="radarCardClass(card.tone)"
-                  >
-                    <div class="text-[10px] font-bold uppercase tracking-wider opacity-80">
-                      {{ card.label }}
-                    </div>
-                    <div class="mt-2 text-3xl font-bold">
-                      {{ card.count.toLocaleString() }}
-                    </div>
-                    <div class="mt-2 text-xs opacity-80">
-                      {{ card.count ? 'Cần theo dõi ngay' : 'Đang yên' }}
-                    </div>
+                <div class="rounded-2xl border border-n-ruby-4 bg-n-ruby-2/60 px-4 py-4">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-n-ruby-11">
+                    Queue hiện tại
+                  </div>
+                  <div class="mt-2 text-3xl font-bold text-n-ruby-12">
+                    {{ managerAiHandoffQueue.length.toLocaleString() }}
+                  </div>
+                  <div class="mt-1 text-sm text-n-ruby-11">
+                    {{ managerAiHandoffQueue.length ? 'Case cần nhân viên xử lý ngay' : 'Hiện không có case chờ' }}
                   </div>
                 </div>
 
-                <div class="grid gap-6 xl:grid-cols-12">
-                  <div class="xl:col-span-5 rounded-2xl border border-n-slate-3 bg-n-solid-2/40 p-5">
-                    <div class="flex items-center justify-between gap-3">
-                      <div>
-                        <div class="text-sm font-semibold text-n-slate-12">
-                          Khách đang nhắn trong ngày
-                        </div>
-                        <div class="mt-1 text-xs text-n-slate-11">
-                          Tổng {{ managerDailyOverview.length }} hội thoại trong ngày {{ operationsTargetDate }}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="mt-4 flex flex-col gap-3">
-                      <button
-                        v-for="item in managerDailyOverview"
-                        :key="`daily-${item.conversation_id}`"
-                        class="rounded-xl border border-n-slate-3 bg-n-solid-1 px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-n-blue-4 hover:shadow-sm"
-                        @click="openAiControlConversation(item.conversation_id)"
-                      >
-                        <div class="flex items-start justify-between gap-3">
-                          <div class="min-w-0">
-                            <div class="truncate text-sm font-semibold text-n-slate-12">
-                              {{ queueItemTitle(item) }}
-                            </div>
-                            <div class="mt-1 text-xs text-n-slate-11">
-                              {{ item.topic_guess || 'Chưa rõ chủ đề' }} · {{ item.message_count_in_day || 0 }} tin nhắn
-                            </div>
-                          </div>
-                          <div class="text-[11px] text-n-slate-10">
-                            {{ formatIsoDateTime(item.last_message_at) }}
-                          </div>
-                        </div>
-                        <div class="mt-2 text-sm text-n-slate-11 line-clamp-2">
-                          {{ item.message_snippets?.[0]?.content || 'Không có snippet' }}
-                        </div>
-                      </button>
-
-                      <div
-                        v-if="!managerDailyOverview.length && !isManagerQueuesLoading"
-                        class="rounded-xl border border-dashed border-n-slate-4 px-4 py-6 text-center text-sm text-n-slate-11"
-                      >
-                        Chưa có hội thoại khách nhắn trong ngày đã chọn.
-                      </div>
-                    </div>
+                <div class="rounded-2xl border border-n-slate-3 bg-n-solid-2/40 p-5">
+                  <div class="text-sm font-semibold text-n-slate-12">
+                    Danh sách handoff chờ
+                  </div>
+                  <div class="mt-1 text-xs text-n-slate-11">
+                    Chỉ hiển thị conversation còn nhãn `ai_handoff` và tin nhắn khách gần nhất chưa có phản hồi công khai mới hơn.
                   </div>
 
-                  <div class="xl:col-span-7 rounded-2xl border border-n-slate-3 bg-n-solid-2/40 p-5">
-                    <div class="flex items-center justify-between gap-3">
-                      <div>
-                        <div class="text-sm font-semibold text-n-slate-12">
-                          Top ưu tiên cần xử lý
-                        </div>
-                        <div class="mt-1 text-xs text-n-slate-11">
-                          Digest hợp nhất từ handoff, SLA, follow-up, unassigned và reply gap.
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="mt-4 flex flex-col gap-3">
-                      <button
-                        v-for="item in managerTopPriorities"
-                        :key="`${item.bucket}-${item.conversation_id}`"
-                        class="rounded-xl border border-n-slate-3 bg-n-solid-1 px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-n-ruby-4 hover:shadow-sm"
-                        @click="openAiControlConversation(item.conversation_id)"
-                      >
-                        <div class="flex flex-wrap items-center gap-2">
-                          <span
-                            class="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold"
-                            :class="priorityBucketClass(item.bucket)"
-                          >
-                            {{ priorityBucketLabel(item.bucket) }}
-                          </span>
-                          <span class="text-[11px] font-semibold text-n-slate-10">
-                            Score {{ Number(item.score || 0).toLocaleString() }}
-                          </span>
-                          <span class="text-[11px] text-n-slate-10">
-                            Chờ {{ formatQueueAge(item.waiting_minutes) }}
-                          </span>
-                        </div>
-                        <div class="mt-2 flex items-start justify-between gap-3">
-                          <div class="min-w-0">
-                            <div class="truncate text-sm font-semibold text-n-slate-12">
-                              {{ queueItemTitle(item) }}
-                            </div>
-                            <div class="mt-1 text-xs text-n-slate-11">
-                              {{ item.reason }}
-                            </div>
-                          </div>
-                          <div class="text-[11px] text-n-slate-10">
-                            #{{ item.conversation_display_id || item.conversation_id }}
-                          </div>
-                        </div>
-                        <div class="mt-2 text-sm text-n-slate-11 line-clamp-2">
-                          {{ queueItemSummary(item) }}
-                        </div>
-                      </button>
-
-                      <div
-                        v-if="!managerTopPriorities.length && !isManagerQueuesLoading"
-                        class="rounded-xl border border-dashed border-n-slate-4 px-4 py-6 text-center text-sm text-n-slate-11"
-                      >
-                        Chưa có case ưu tiên cao trong digest.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="grid gap-6 xl:grid-cols-12">
-                  <div class="xl:col-span-6 rounded-2xl border border-n-slate-3 bg-n-solid-2/40 p-5">
-                    <div class="flex items-center justify-between gap-3">
-                      <div>
-                        <div class="text-sm font-semibold text-n-slate-12">
-                          Handoff đang chờ nhân viên
-                        </div>
-                        <div class="mt-1 text-xs text-n-slate-11">
-                          Label `ai_handoff` với thời gian chờ và vấn đề chính.
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="mt-4 flex flex-col gap-3">
-                      <button
-                        v-for="item in managerAiHandoffQueue"
-                        :key="`handoff-${item.conversation_id}`"
-                        class="rounded-xl border border-n-slate-3 bg-n-solid-1 px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-n-ruby-4 hover:shadow-sm"
-                        @click="openAiControlConversation(item.conversation_id)"
-                      >
-                        <div class="flex items-center justify-between gap-3">
-                          <div class="min-w-0">
-                            <div class="truncate text-sm font-semibold text-n-slate-12">
-                              {{ queueItemTitle(item) }}
-                            </div>
-                            <div class="mt-1 text-xs text-n-slate-11">
-                              {{ item.topic_guess || 'Chưa rõ chủ đề' }} · chờ {{ formatQueueAge(item.waiting_minutes) }}
-                            </div>
-                          </div>
-                          <span class="rounded-full bg-n-ruby-3 px-2.5 py-1 text-[11px] font-semibold text-n-ruby-12">
-                            {{ item.handoff_reason || 'ai_handoff' }}
-                          </span>
-                        </div>
-                        <div class="mt-2 text-sm text-n-slate-11 line-clamp-2">
-                          {{ item.issue_summary || item.last_customer_message || 'Chưa có tóm tắt' }}
-                        </div>
-                      </button>
-
-                      <div
-                        v-if="!managerAiHandoffQueue.length && !isManagerQueuesLoading"
-                        class="rounded-xl border border-dashed border-n-slate-4 px-4 py-6 text-center text-sm text-n-slate-11"
-                      >
-                        Không có handoff nào đang chờ.
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="xl:col-span-6 grid gap-4 md:grid-cols-2">
-                    <div
-                      v-for="queue in managerMiniQueues"
-                      :key="queue.key"
-                      class="rounded-2xl border border-n-slate-3 bg-n-solid-2/40 p-4"
+                  <div class="mt-4 flex flex-col gap-3">
+                    <button
+                      v-for="item in managerAiHandoffQueue"
+                      :key="`handoff-${item.conversation_id}`"
+                      class="rounded-xl border border-n-slate-3 bg-n-solid-1 px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-n-ruby-4 hover:shadow-sm"
+                      @click="openAiControlConversation(item.conversation_id)"
                     >
-                      <div class="text-sm font-semibold text-n-slate-12">
-                        {{ queue.label }}
-                      </div>
-                      <div class="mt-1 text-xs text-n-slate-11">
-                        {{ Array.isArray(queue.items) ? queue.items.length : 0 }} bản ghi hiển thị
-                      </div>
-
-                      <div class="mt-3 flex flex-col gap-2">
-                        <button
-                          v-for="item in (queue.items || []).slice(0, 3)"
-                          :key="`${queue.key}-${item.conversation_id}`"
-                          class="rounded-xl border border-n-slate-3 bg-n-solid-1 px-3 py-2 text-left transition-colors hover:border-n-blue-4"
-                          @click="openAiControlConversation(item.conversation_id)"
-                        >
-                          <div class="truncate text-xs font-semibold text-n-slate-12">
+                      <div class="flex items-center justify-between gap-3">
+                        <div class="min-w-0">
+                          <div class="truncate text-sm font-semibold text-n-slate-12">
                             {{ queueItemTitle(item) }}
                           </div>
-                          <div class="mt-1 text-[11px] text-n-slate-11 line-clamp-2">
-                            {{ queueItemSummary(item) }}
+                          <div class="mt-1 text-xs text-n-slate-11">
+                            {{ item.topic_guess || 'Chưa rõ chủ đề' }} · chờ {{ formatQueueAge(item.waiting_minutes) }}
                           </div>
-                          <div class="mt-1 text-[10px] text-n-slate-10">
-                            {{ miniQueueMetricText(queue.key, item) }}
-                          </div>
-                        </button>
-
-                        <div
-                          v-if="!(queue.items || []).length && !isManagerQueuesLoading"
-                          class="rounded-xl border border-dashed border-n-slate-4 px-3 py-4 text-center text-xs text-n-slate-11"
-                        >
-                          Không có bản ghi.
                         </div>
+                        <span class="rounded-full bg-n-ruby-3 px-2.5 py-1 text-[11px] font-semibold text-n-ruby-12">
+                          {{ item.handoff_reason || 'ai_handoff' }}
+                        </span>
                       </div>
+                      <div class="mt-2 text-sm text-n-slate-11 line-clamp-2">
+                        {{ item.issue_summary || item.last_customer_message || 'Chưa có tóm tắt' }}
+                      </div>
+                    </button>
+
+                    <div
+                      v-if="!managerAiHandoffQueue.length && !isManagerQueuesLoading"
+                      class="rounded-xl border border-dashed border-n-slate-4 px-4 py-6 text-center text-sm text-n-slate-11"
+                    >
+                      Không có handoff nào đang chờ.
                     </div>
                   </div>
                 </div>
@@ -2223,18 +1906,32 @@ onBeforeUnmount(() => {
                           </span>
                         </td>
                         <td class="px-6 py-4 text-right">
-                          <Button
+                          <div
                             v-if="
                               !(item.review_status || '').includes('verified') &&
                               !(item.review_status || '').includes('rejected')
                             "
-                            color="teal"
-                            size="sm"
-                            class="h-8 shadow-sm transition-transform active:scale-95"
-                            label="Xác nhận"
-                            :is-loading="isPaymentCaseActionLoading(item.id)"
-                            @click.stop="confirmPaymentCase(item)"
-                          />
+                            class="flex items-center justify-end gap-2"
+                          >
+                            <Button
+                              color="teal"
+                              size="sm"
+                              class="h-8 shadow-sm transition-transform active:scale-95"
+                              label="Xác nhận"
+                              :is-loading="isPaymentCaseActionLoading(item.id)"
+                              :disabled="isPaymentCaseActionLoading(item.id)"
+                              @click.stop="confirmPaymentCase(item)"
+                            />
+                            <Button
+                              color="ruby"
+                              variant="faded"
+                              size="sm"
+                              class="h-8 shadow-sm"
+                              label="Xóa"
+                              :disabled="isPaymentCaseActionLoading(item.id)"
+                              @click.stop="deletePaymentCase(item)"
+                            />
+                          </div>
                           <span
                             v-else
                             class="text-xs text-n-slate-10"
@@ -2362,80 +2059,6 @@ onBeforeUnmount(() => {
 
               <!-- Sidebar tools — 4/12 cột -->
               <div class="lg:col-span-4 xl:col-span-3 flex flex-col gap-5">
-                <!-- Điều khiển AI theo kênh -->
-                <div
-                  class="rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm overflow-hidden"
-                >
-                  <div class="px-5 py-4 border-b border-n-slate-3 bg-n-solid-2">
-                    <div
-                      class="text-base font-semibold tracking-tight text-n-slate-12"
-                    >
-                      🔌 Điều khiển AI theo kênh
-                    </div>
-                    <div class="mt-0.5 text-xs text-n-slate-11">
-                      Dừng/Mở AI webhook cho từng kênh
-                    </div>
-                  </div>
-                  <div class="p-5 flex flex-col gap-4">
-                    <Button
-                      :color="isAllBlocked ? 'blue' : 'ruby'"
-                      size="sm"
-                      class="h-10 w-full shadow-sm transition-transform active:scale-95"
-                      :is-loading="isTakeoverAllLoading"
-                      :label="isAllBlocked ? 'Mở AI tất cả kênh' : 'Dừng AI tất cả kênh'"
-                      @click="toggleAllInboxBlock"
-                    />
-                    <div
-                      class="text-[11px] leading-relaxed text-n-slate-11 bg-n-slate-2 p-3 rounded-xl border border-n-slate-3"
-                    >
-                      Trạng thái:
-                      <span class="font-semibold" :class="isAllBlocked ? 'text-n-ruby-11' : 'text-n-teal-11'">{{
-                        isAllBlocked ? 'Tất cả đã dừng' : 'Đang hoạt động'
-                      }}</span>
-                    </div>
-                    <div
-                      v-if="isBlockedInboxesLoading"
-                      class="flex items-center justify-center py-4"
-                    >
-                      <div class="w-4 h-4 rounded-full border-2 border-n-blue-9 border-t-transparent animate-spin"></div>
-                      <span class="ml-2 text-xs text-n-slate-11">Đang tải...</span>
-                    </div>
-                    <div v-else-if="!inboxList.length" class="text-xs text-n-slate-11 text-center py-4">
-                      Không có kênh nào.
-                    </div>
-                    <div v-else class="flex flex-col gap-2">
-                      <div
-                        v-for="inbox in inboxList"
-                        :key="inbox.id"
-                        class="flex items-center justify-between rounded-xl px-3.5 py-2.5 transition-all duration-200 group"
-                        :class="isInboxBlocked(inbox.id)
-                          ? 'bg-n-ruby-2/60 outline outline-1 outline-n-ruby-4/50'
-                          : 'bg-n-teal-2/40 outline outline-1 outline-n-teal-4/50 hover:bg-n-teal-2/70'"
-                      >
-                        <div class="flex items-center gap-2.5 min-w-0">
-                          <span class="text-base flex-shrink-0">{{ channelIcon(inbox) }}</span>
-                          <div class="min-w-0">
-                            <div class="text-xs font-semibold text-n-slate-12 truncate">{{ inbox.name }}</div>
-                            <div class="text-[10px] text-n-slate-11">{{ channelLabel(inbox) }}</div>
-                          </div>
-                        </div>
-                        <button
-                          class="relative flex-shrink-0 w-10 h-5.5 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-1"
-                          :class="isInboxBlocked(inbox.id)
-                            ? 'bg-n-ruby-6 focus:ring-n-ruby-4'
-                            : 'bg-n-teal-8 focus:ring-n-teal-4'"
-                          @click="toggleInboxBlock(inbox.id)"
-                        >
-                          <span
-                            class="absolute top-0.5 block w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-transform duration-300"
-                            :class="isInboxBlocked(inbox.id) ? 'left-0.5' : 'left-[calc(100%-1.25rem)]'"
-                          />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 <div
                   class="rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm overflow-hidden"
                 >
@@ -2593,6 +2216,80 @@ onBeforeUnmount(() => {
                         </div>
                       </div>
                     </template>
+                  </div>
+                </div>
+
+                <!-- Điều khiển AI theo kênh -->
+                <div
+                  class="rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm overflow-hidden"
+                >
+                  <div class="px-5 py-4 border-b border-n-slate-3 bg-n-solid-2">
+                    <div
+                      class="text-base font-semibold tracking-tight text-n-slate-12"
+                    >
+                      🔌 Điều khiển AI theo kênh
+                    </div>
+                    <div class="mt-0.5 text-xs text-n-slate-11">
+                      Dừng/Mở AI webhook cho từng kênh
+                    </div>
+                  </div>
+                  <div class="p-5 flex flex-col gap-4">
+                    <Button
+                      :color="isAllBlocked ? 'blue' : 'ruby'"
+                      size="sm"
+                      class="h-10 w-full shadow-sm transition-transform active:scale-95"
+                      :is-loading="isTakeoverAllLoading"
+                      :label="isAllBlocked ? 'Mở AI tất cả kênh' : 'Dừng AI tất cả kênh'"
+                      @click="toggleAllInboxBlock"
+                    />
+                    <div
+                      class="text-[11px] leading-relaxed text-n-slate-11 bg-n-slate-2 p-3 rounded-xl border border-n-slate-3"
+                    >
+                      Trạng thái:
+                      <span class="font-semibold" :class="isAllBlocked ? 'text-n-ruby-11' : 'text-n-teal-11'">{{
+                        isAllBlocked ? 'Tất cả đã dừng' : 'Đang hoạt động'
+                      }}</span>
+                    </div>
+                    <div
+                      v-if="isBlockedInboxesLoading"
+                      class="flex items-center justify-center py-4"
+                    >
+                      <div class="w-4 h-4 rounded-full border-2 border-n-blue-9 border-t-transparent animate-spin"></div>
+                      <span class="ml-2 text-xs text-n-slate-11">Đang tải...</span>
+                    </div>
+                    <div v-else-if="!inboxList.length" class="text-xs text-n-slate-11 text-center py-4">
+                      Không có kênh nào.
+                    </div>
+                    <div v-else class="flex flex-col gap-2">
+                      <div
+                        v-for="inbox in inboxList"
+                        :key="inbox.id"
+                        class="flex items-center justify-between rounded-xl px-3.5 py-2.5 transition-all duration-200 group"
+                        :class="isInboxBlocked(inbox.id)
+                          ? 'bg-n-ruby-2/60 outline outline-1 outline-n-ruby-4/50'
+                          : 'bg-n-teal-2/40 outline outline-1 outline-n-teal-4/50 hover:bg-n-teal-2/70'"
+                      >
+                        <div class="flex items-center gap-2.5 min-w-0">
+                          <span class="text-base flex-shrink-0">{{ channelIcon(inbox) }}</span>
+                          <div class="min-w-0">
+                            <div class="text-xs font-semibold text-n-slate-12 truncate">{{ inbox.name }}</div>
+                            <div class="text-[10px] text-n-slate-11">{{ channelLabel(inbox) }}</div>
+                          </div>
+                        </div>
+                        <button
+                          class="relative flex-shrink-0 w-10 h-5.5 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-1"
+                          :class="isInboxBlocked(inbox.id)
+                            ? 'bg-n-ruby-6 focus:ring-n-ruby-4'
+                            : 'bg-n-teal-8 focus:ring-n-teal-4'"
+                          @click="toggleInboxBlock(inbox.id)"
+                        >
+                          <span
+                            class="absolute top-0.5 block w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-transform duration-300"
+                            :class="isInboxBlocked(inbox.id) ? 'left-0.5' : 'left-[calc(100%-1.25rem)]'"
+                          />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 

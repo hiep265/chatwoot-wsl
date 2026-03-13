@@ -135,6 +135,46 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     render json: { error: 'Unable to review payment case', detail: e.message }, status: :bad_gateway
   end
 
+  def delete_payment_review_case
+    base_url = chatbotlevan_base_url
+    unless base_url.present?
+      render json: { error: 'CHATBOTLEVAN_BASE_URL is not configured' }, status: :unprocessable_entity
+      return
+    end
+
+    case_id = params[:case_id].to_s.strip
+    if case_id.blank?
+      render json: { error: 'case_id is required' }, status: :unprocessable_entity
+      return
+    end
+
+    deleted_by = params[:deleted_by].to_s.strip
+    deleted_by = Current.user&.email.to_s.strip if deleted_by.blank?
+    deleted_by = "chatwoot_user_#{Current.user&.id}" if deleted_by.blank?
+
+    response = delete_json(
+      "#{base_url}/tools/payment-review-cases/#{case_id}",
+      { deleted_by: deleted_by }
+    )
+    status = response.code.to_i
+    body = parse_json_body(response.body)
+
+    if status.between?(200, 299)
+      render json: body, status: :ok
+      return
+    end
+
+    Rails.logger.error(
+      "[AiControl] delete_payment_case_failed account_id=#{Current.account.id} case_id=#{case_id} status=#{status} body=#{response.body}"
+    )
+    render json: { error: 'Payment review delete request failed', detail: body }, status: :bad_gateway
+  rescue StandardError => e
+    Rails.logger.error(
+      "[AiControl] delete_payment_case_error account_id=#{Current.account.id} case_id=#{params[:case_id]} error=#{e.class}:#{e.message}"
+    )
+    render json: { error: 'Unable to delete payment case', detail: e.message }, status: :bad_gateway
+  end
+
   def manager_daily_overview
     proxy_chatbotlevan_manager_get(
       path: '/tools/staff/daily-message-overview',
@@ -861,6 +901,23 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     uri.query = URI.encode_www_form(query.compact) if query.present?
 
     request = Net::HTTP::Get.new(uri.request_uri)
+    request['Content-Type'] = 'application/json'
+
+    token = ENV.fetch('CHATBOTLEVAN_API_TOKEN', '').to_s.strip
+    request['Authorization'] = "Bearer #{token}" if token.present?
+
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = uri.scheme == 'https'
+    http.open_timeout = 10
+    http.read_timeout = 60
+    http.request(request)
+  end
+
+  def delete_json(url, query = {})
+    uri = URI.parse(url)
+    uri.query = URI.encode_www_form(query.compact) if query.present?
+
+    request = Net::HTTP::Delete.new(uri.request_uri)
     request['Content-Type'] = 'application/json'
 
     token = ENV.fetch('CHATBOTLEVAN_API_TOKEN', '').to_s.strip

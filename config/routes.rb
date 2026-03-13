@@ -93,6 +93,7 @@ Rails.application.routes.draw do
           end
           post 'ai_control/train_faq', to: 'ai_control#train_faq'
           get 'ai_control/payment_review_cases', to: 'ai_control#payment_review_cases'
+          delete 'ai_control/payment_review_cases/:case_id', to: 'ai_control#delete_payment_review_case'
           post 'ai_control/payment_review_cases/:case_id/review', to: 'ai_control#review_payment_review_case'
           get 'ai_control/manager/daily_overview', to: 'ai_control#manager_daily_overview'
           get 'ai_control/manager/daily_raw_messages', to: 'ai_control#manager_daily_raw_messages'
