@@ -8,6 +8,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:another_assistant) { create(:captain_assistant, account: account) }
   let(:another_document) { create(:captain_document, account: account, assistant: assistant) }
+  let(:embedding_service) { instance_double(Captain::Llm::EmbeddingService) }
+
+  def vector_with_cosine_similarity(similarity)
+    ([similarity, Math.sqrt(1 - (similarity**2))] + Array.new(1534, 0.0)).freeze
+  end
 
   def json_response
     JSON.parse(response.body, symbolize_names: true)
@@ -151,6 +156,73 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
       expect(json_response[:id]).to eq(response_record.id)
       expect(json_response[:question]).to eq(response_record.question)
       expect(json_response[:answer]).to eq(response_record.answer)
+    end
+  end
+
+  describe 'GET /api/v1/accounts/:account_id/captain/assistant_responses/semantic_search' do
+    before do
+      allow(Captain::Llm::EmbeddingService).to receive(:new).and_return(embedding_service)
+      allow(embedding_service).to receive(:get_embedding).and_return(vector_with_cosine_similarity(1.0))
+
+      create(
+        :captain_assistant_response,
+        account: account,
+        assistant: assistant,
+        question: 'Top result',
+        answer: 'Top answer',
+        status: :approved,
+        embedding: vector_with_cosine_similarity(0.95)
+      )
+      create(
+        :captain_assistant_response,
+        account: account,
+        assistant: assistant,
+        question: 'Second result',
+        answer: 'Second answer',
+        status: :approved,
+        embedding: vector_with_cosine_similarity(0.8)
+      )
+      create(
+        :captain_assistant_response,
+        account: account,
+        assistant: assistant,
+        question: 'Third result',
+        answer: 'Third answer',
+        status: :approved,
+        embedding: vector_with_cosine_similarity(0.6)
+      )
+      create(
+        :captain_assistant_response,
+        account: account,
+        assistant: assistant,
+        question: 'Fourth result',
+        answer: 'Fourth answer',
+        status: :approved,
+        embedding: vector_with_cosine_similarity(0.55)
+      )
+      create(
+        :captain_assistant_response,
+        account: account,
+        assistant: assistant,
+        question: 'Below threshold result',
+        answer: 'Below threshold answer',
+        status: :approved,
+        embedding: vector_with_cosine_similarity(0.4)
+      )
+    end
+
+    it 'uses default min_similarity 0.5 and returns at most 3 results' do
+      get "/api/v1/accounts/#{account.id}/captain/assistant_responses/semantic_search",
+          params: { query: 'khóa học tiếng nhật' },
+          headers: agent.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(json_response[:payload].length).to eq(3)
+      expect(json_response[:meta][:total_count]).to eq(3)
+      expect(json_response[:payload].pluck(:question)).to eq(
+        ['Top result', 'Second result', 'Third result']
+      )
     end
   end
 

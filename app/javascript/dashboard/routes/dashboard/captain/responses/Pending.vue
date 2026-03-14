@@ -21,6 +21,8 @@ import CreateResponseDialog from 'dashboard/components-next/captain/pageComponen
 import ResponsePageEmptyState from 'dashboard/components-next/captain/pageComponents/emptyStates/ResponsePageEmptyState.vue';
 import FeatureSpotlightPopover from 'dashboard/components-next/feature-spotlight/FeatureSpotlightPopover.vue';
 import LimitBanner from 'dashboard/components-next/captain/pageComponents/response/LimitBanner.vue';
+import { approvePendingFaq } from './helpers/approvePendingFaq';
+import { resolvePendingResponseTarget } from './helpers/resolvePendingResponseTarget';
 
 const router = useRouter();
 const route = useRoute();
@@ -59,19 +61,23 @@ const handleDelete = () => {
   deleteDialog.value.dialogRef.open();
 };
 
-const handleAccept = async () => {
+const handleAccept = async response => {
+  const targetResponse = response || selectedResponse.value;
   try {
-    await store.dispatch('captainResponses/update', {
-      id: selectedResponse.value.id,
-      status: 'approved',
+    const didApprove = await approvePendingFaq({
+      store,
+      selectedResponse: targetResponse,
+      t,
+      notify: useAlert,
     });
-    useAlert(t(`CAPTAIN.RESPONSES.EDIT.APPROVE_SUCCESS_MESSAGE`));
-  } catch (error) {
-    const errorMessage =
-      error?.message || t(`CAPTAIN.RESPONSES.EDIT.ERROR_MESSAGE`);
-    useAlert(errorMessage);
+
+    if (didApprove) {
+      fetchResponses(responseMeta.value?.page || 1);
+    }
   } finally {
-    selectedResponse.value = null;
+    if (!response || selectedResponse.value?.id === targetResponse?.id) {
+      selectedResponse.value = null;
+    }
   }
 };
 
@@ -136,15 +142,30 @@ const handleScanAllPending = async () => {
   }
 };
 
-const handleAction = ({ action, id }) => {
-  console.warn('[Captain Pending] handleAction', { action, id });
-  const responseId = Number(id);
-  selectedResponse.value = filteredResponses.value.find(
-    response => Number(response.id) === responseId
-  );
+const handleAction = async ({ action, id }, response) => {
+  const responseId = Number(id || response?.id);
+  const targetResponse = resolvePendingResponseTarget({
+    response,
+    responseId,
+    responses: filteredResponses.value,
+  });
+
+  console.log('[Captain Pending] Bước 3: Nhận action từ card', {
+    action,
+    responseId,
+    hasTargetResponse: Boolean(targetResponse),
+  });
+
+  selectedResponse.value = targetResponse;
 
   if (action === 'scan_answer') {
     handleScanAnswer(responseId);
+    return;
+  }
+
+  if (action === 'approve') {
+    console.log('[Captain Pending] Bước 4: Gọi luồng approve trực tiếp');
+    await handleAccept(targetResponse);
     return;
   }
 
@@ -154,9 +175,6 @@ const handleAction = ({ action, id }) => {
     }
     if (action === 'edit') {
       handleEdit();
-    }
-    if (action === 'approve') {
-      handleAccept();
     }
   });
 };
@@ -417,7 +435,7 @@ onMounted(() => {
           :show-menu="false"
           :show-actions="!bulkSelectedIds.has(response.id)"
           :is-scanning="isScanningOne === response.id"
-          @action="handleAction"
+          @action="event => handleAction(event, response)"
           @navigate="handleNavigationAction"
           @select="handleCardSelect"
           @hover="isHovered => handleCardHover(isHovered, response.id)"

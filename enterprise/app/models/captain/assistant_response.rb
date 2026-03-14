@@ -26,6 +26,10 @@ class Captain::AssistantResponse < ApplicationRecord
   self.table_name = 'captain_assistant_responses'
 
   SCAN_METADATA_REGEX = /\A\s*\[\[scan_meta\]\](?<payload>\{.*?\})\[\[\/scan_meta\]\]\s*/m.freeze
+  DEFAULT_SEARCH_LIMIT = 3
+  MAX_SEARCH_LIMIT = 3
+  DEFAULT_MIN_SIMILARITY = 0.5
+  SEARCH_CANDIDATE_MULTIPLIER = 5
 
   belongs_to :assistant, class_name: 'Captain::Assistant'
   belongs_to :account
@@ -54,9 +58,24 @@ class Captain::AssistantResponse < ApplicationRecord
     self.class.strip_scan_metadata(answer)
   end
 
-  def self.search(query, account_id: nil)
+  def self.search(query, account_id: nil, limit: DEFAULT_SEARCH_LIMIT, min_similarity: DEFAULT_MIN_SIMILARITY)
+    return none if query.blank?
+
+    limit = DEFAULT_SEARCH_LIMIT if limit.to_i <= 0
+    limit = [limit.to_i, MAX_SEARCH_LIMIT].min
+    min_similarity = DEFAULT_MIN_SIMILARITY if min_similarity.to_f <= 0 || min_similarity.to_f > 1
+    max_distance = 1.0 - min_similarity.to_f
+
     embedding = Captain::Llm::EmbeddingService.new(account_id: account_id).get_embedding(query)
-    nearest_neighbors(:embedding, embedding, distance: 'cosine').limit(5)
+    candidates_limit = [limit * SEARCH_CANDIDATE_MULTIPLIER, 20].min
+
+    where.not(embedding: nil)
+      .nearest_neighbors(:embedding, embedding, distance: 'cosine')
+      .limit(candidates_limit)
+      .select do |response|
+        response.respond_to?(:neighbor_distance) && response.neighbor_distance.present? && response.neighbor_distance.to_f <= max_distance
+      end
+      .first(limit)
   end
 
   def self.extract_scan_metadata(raw_answer)
@@ -96,6 +115,13 @@ class Captain::AssistantResponse < ApplicationRecord
 
   private
 
+  def embedding_content
+    [
+      "Question: #{question.to_s.strip}",
+      "Answer: #{display_answer}"
+    ].join("\n")
+  end
+
   def ensure_status
     self.status ||= :approved
   end
@@ -107,6 +133,6 @@ class Captain::AssistantResponse < ApplicationRecord
   def update_response_embedding
     return unless saved_change_to_question? || saved_change_to_answer? || embedding.nil?
 
-    Captain::Llm::UpdateEmbeddingJob.perform_later(self, question)
+    Captain::Llm::UpdateEmbeddingJob.perform_later(self, embedding_content)
   end
 end

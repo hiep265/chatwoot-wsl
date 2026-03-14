@@ -13,14 +13,43 @@ import TasksAPI from 'dashboard/api/captain/tasks';
 export function useCaptain() {
   const store = useStore();
   const { t } = useI18n();
-  const { isCloudFeatureEnabled } = useAccount();
+  const { currentAccount, isCloudFeatureEnabled } = useAccount();
   const currentChat = useMapGetter('getSelectedChat');
   const replyMode = useMapGetter('draftMessages/getReplyEditorMode');
+  const accountUIFlags = useMapGetter('accounts/getUIFlags');
   const conversationId = computed(() => currentChat.value?.id);
   const draftKey = computed(
     () => `draft-${conversationId.value}-${replyMode.value}`
   );
   const draftMessage = useFunctionGetter('draftMessages/get', draftKey);
+
+  const normalizeCaptainLimit = limit => {
+    if (!limit) return null;
+
+    return {
+      totalCount: Number(limit.total_count ?? limit.totalCount ?? 0),
+      currentAvailable: Number(
+        limit.current_available ?? limit.currentAvailable ?? 0
+      ),
+      consumed: Number(limit.consumed ?? 0),
+    };
+  };
+
+  const captainLimits = computed(() => {
+    const rawCaptainLimits = currentAccount.value?.limits?.captain;
+    if (!rawCaptainLimits) return null;
+
+    return {
+      documents: normalizeCaptainLimit(rawCaptainLimits.documents),
+      responses: normalizeCaptainLimit(rawCaptainLimits.responses),
+    };
+  });
+
+  const documentLimits = computed(() => captainLimits.value?.documents || null);
+  const responseLimits = computed(() => captainLimits.value?.responses || null);
+  const isFetchingLimits = computed(
+    () => accountUIFlags.value?.isFetchingLimits || false
+  );
 
   // === Feature Flags ===
   const captainEnabled = computed(() => {
@@ -164,10 +193,39 @@ export function useCaptain() {
     return rewriteContent(content, type, options);
   };
 
+  const fetchLimits = async () => {
+    console.log('[Captain Limits] Bắt đầu luồng');
+    console.log('[Captain Limits] Bước 1: Gửi yêu cầu tải giới hạn Captain');
+
+    try {
+      await store.dispatch('accounts/limits');
+
+      if (captainLimits.value) {
+        console.log('[Captain Limits] Bước 2: Đã nhận dữ liệu giới hạn Captain');
+      } else {
+        console.warn(
+          '[Captain Limits] Cảnh báo tại bước 2: Chưa có dữ liệu giới hạn Captain'
+        );
+      }
+    } catch (error) {
+      console.error(
+        '[Captain Limits] Lỗi tại bước 1: Không thể tải giới hạn Captain',
+        error
+      );
+    } finally {
+      console.log('[Captain Limits] Kết thúc luồng');
+    }
+  };
+
   return {
     // Feature flags
     captainEnabled,
     captainTasksEnabled,
+    captainLimits,
+    documentLimits,
+    responseLimits,
+    fetchLimits,
+    isFetchingLimits,
 
     // Conversation context
     draftMessage,

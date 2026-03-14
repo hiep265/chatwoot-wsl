@@ -6,6 +6,18 @@ class CaptainResponses extends ApiClient {
     super('captain/assistant_responses', { accountScoped: true });
   }
 
+  create(data) {
+    return axios.post(this.url, {
+      assistant_response: data,
+    });
+  }
+
+  update(id, data) {
+    return axios.patch(`${this.url}/${id}`, {
+      assistant_response: data,
+    });
+  }
+
   get({ page = 1, search, assistantId, documentId, status } = {}) {
     return axios.get(this.url, {
       params: {

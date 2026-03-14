@@ -20,11 +20,11 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   def semantic_search
     query = permitted_params[:query].to_s.strip
     limit = permitted_params[:limit].to_i
-    limit = 5 if limit <= 0
-    limit = 20 if limit > 20
+    limit = Captain::AssistantResponse::DEFAULT_SEARCH_LIMIT if limit <= 0
+    limit = Captain::AssistantResponse::MAX_SEARCH_LIMIT if limit > Captain::AssistantResponse::MAX_SEARCH_LIMIT
 
     min_similarity = permitted_params[:min_similarity].to_f
-    min_similarity = 0.7 if min_similarity <= 0 || min_similarity > 1
+    min_similarity = Captain::AssistantResponse::DEFAULT_MIN_SIMILARITY if min_similarity <= 0 || min_similarity > 1
     max_distance = 1.0 - min_similarity
 
     if query.blank?

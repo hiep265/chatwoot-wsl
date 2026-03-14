@@ -126,6 +126,10 @@ const timestamp = computed(() =>
 );
 
 const handleAssistantAction = ({ action, value, id }) => {
+  console.log('[Captain ResponseCard] Nhấn action', {
+    action,
+    responseId: Number(id || props.id),
+  });
   if (action === 'scan_answer') {
     console.log('[Captain] scan answer');
   }

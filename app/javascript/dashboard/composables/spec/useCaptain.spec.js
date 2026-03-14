@@ -31,6 +31,18 @@ describe('useCaptain', () => {
   const mockStore = {
     dispatch: vi.fn(),
   };
+  const mockCaptainLimits = {
+    documents: {
+      total_count: 100,
+      current_available: 40,
+      consumed: 60,
+    },
+    responses: {
+      total_count: 50,
+      current_available: 10,
+      consumed: 40,
+    },
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -47,21 +59,135 @@ describe('useCaptain', () => {
     useI18n.mockReturnValue({ t: vi.fn() });
     useAccount.mockReturnValue({
       isCloudFeatureEnabled: vi.fn().mockReturnValue(true),
-      currentAccount: { value: { limits: { captain: {} } } },
+      currentAccount: {
+        value: {
+          limits: {
+            captain: mockCaptainLimits,
+          },
+        },
+      },
     });
     useConfig.mockReturnValue({
       isEnterprise: false,
     });
+    mockStore.dispatch.mockResolvedValue();
   });
 
   it('initializes computed properties correctly', async () => {
-    const { captainEnabled, captainTasksEnabled, currentChat, draftMessage } =
-      useCaptain();
+    const {
+      captainEnabled,
+      captainTasksEnabled,
+      captainLimits,
+      documentLimits,
+      responseLimits,
+      isFetchingLimits,
+      currentChat,
+      draftMessage,
+    } = useCaptain();
 
     expect(captainEnabled.value).toBe(true);
     expect(captainTasksEnabled.value).toBe(true);
+    expect(captainLimits.value).toEqual({
+      documents: {
+        totalCount: 100,
+        currentAvailable: 40,
+        consumed: 60,
+      },
+      responses: {
+        totalCount: 50,
+        currentAvailable: 10,
+        consumed: 40,
+      },
+    });
+    expect(documentLimits.value).toEqual({
+      totalCount: 100,
+      currentAvailable: 40,
+      consumed: 60,
+    });
+    expect(responseLimits.value).toEqual({
+      totalCount: 50,
+      currentAvailable: 10,
+      consumed: 40,
+    });
+    expect(isFetchingLimits.value).toBe(false);
     expect(currentChat.value).toEqual({ id: '123' });
     expect(draftMessage.value).toBe('Draft message');
+  });
+
+  it('uses_empty_limits_branch_when_captain_limits_missing', () => {
+    useAccount.mockReturnValue({
+      isCloudFeatureEnabled: vi.fn().mockReturnValue(true),
+      currentAccount: { value: { limits: {} } },
+    });
+
+    const { captainLimits, documentLimits, responseLimits } = useCaptain();
+
+    expect(captainLimits.value).toBe(null);
+    expect(documentLimits.value).toBe(null);
+    expect(responseLimits.value).toBe(null);
+  });
+
+  it('runs_full_limits_flow_when_dispatch_succeeds', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { fetchLimits } = useCaptain();
+
+    await fetchLimits();
+
+    expect(mockStore.dispatch).toHaveBeenCalledWith('accounts/limits');
+    expect(logSpy.mock.calls).toEqual([
+      ['[Captain Limits] Bắt đầu luồng'],
+      ['[Captain Limits] Bước 1: Gửi yêu cầu tải giới hạn Captain'],
+      ['[Captain Limits] Bước 2: Đã nhận dữ liệu giới hạn Captain'],
+      ['[Captain Limits] Kết thúc luồng'],
+    ]);
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('uses_warning_branch_when_limits_flow_finishes_without_data', async () => {
+    useAccount.mockReturnValue({
+      isCloudFeatureEnabled: vi.fn().mockReturnValue(true),
+      currentAccount: { value: { limits: {} } },
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { fetchLimits } = useCaptain();
+
+    await fetchLimits();
+
+    expect(mockStore.dispatch).toHaveBeenCalledWith('accounts/limits');
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[Captain Limits] Cảnh báo tại bước 2: Chưa có dữ liệu giới hạn Captain'
+    );
+    expect(logSpy).not.toHaveBeenCalledWith(
+      '[Captain Limits] Bước 2: Đã nhận dữ liệu giới hạn Captain'
+    );
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('stops_limits_flow_at_step_1_when_dispatch_fails', async () => {
+    const requestError = new Error('network failed');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockStore.dispatch.mockRejectedValueOnce(requestError);
+    const { fetchLimits } = useCaptain();
+
+    await fetchLimits();
+
+    expect(mockStore.dispatch).toHaveBeenCalledWith('accounts/limits');
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[Captain Limits] Lỗi tại bước 1: Không thể tải giới hạn Captain',
+      requestError
+    );
+    expect(logSpy).not.toHaveBeenCalledWith(
+      '[Captain Limits] Bước 2: Đã nhận dữ liệu giới hạn Captain'
+    );
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenLastCalledWith('[Captain Limits] Kết thúc luồng');
   });
 
   it('rewrites content', async () => {

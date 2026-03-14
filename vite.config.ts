@@ -25,6 +25,17 @@ import vue from '@vitejs/plugin-vue';
 
 const isLibraryMode = process.env.BUILD_MODE === 'library';
 const isTestMode = process.env.TEST === 'true';
+const frontendUrl = process.env.FRONTEND_URL
+  ? new URL(process.env.FRONTEND_URL)
+  : null;
+const frontendHostname = frontendUrl?.hostname;
+const frontendProtocol =
+  frontendUrl?.protocol === 'https:' ? 'wss' : 'ws';
+const frontendClientPort = frontendUrl?.port
+  ? Number(frontendUrl.port)
+  : frontendUrl?.protocol === 'https:'
+    ? 443
+    : 80;
 
 const vueOptions = {
   template: {
@@ -45,7 +56,21 @@ if (isLibraryMode) {
 export default defineConfig({
   plugins: plugins,
   server: {
-    allowedHosts: ['vite', 'localhost', '127.0.0.1'],
+    host: '0.0.0.0',
+    allowedHosts: [
+      'vite',
+      'localhost',
+      '127.0.0.1',
+      ...(frontendHostname ? [frontendHostname] : []),
+    ],
+    hmr: frontendHostname
+      ? {
+          host: frontendHostname,
+          protocol: frontendProtocol,
+          clientPort: frontendClientPort,
+          path: '/vite-dev/',
+        }
+      : undefined,
   },
   build: {
     rollupOptions: {
