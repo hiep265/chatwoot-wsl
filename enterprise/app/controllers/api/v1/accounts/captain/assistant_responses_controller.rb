@@ -1,3 +1,7 @@
+require 'json'
+require 'net/http'
+require 'uri'
+
 class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accounts::BaseController
   before_action :current_account
 
@@ -6,9 +10,6 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   before_action :set_response, only: [:show, :update, :destroy]
 
   RESULTS_PER_PAGE = 25
-  SCAN_MESSAGES_BEFORE = 5
-  SCAN_MESSAGES_AFTER = 5
-
   def index
     filtered_query = apply_filters(@responses)
     @responses_count = filtered_query.count
@@ -89,152 +90,66 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   # Scan answer từ conversation gốc
   def scan_answer
     @response = Current.account.captain_assistant_responses.find(permitted_params[:id])
-    Rails.logger.info("scan_answer response_id=#{@response.id}")
-
-    metadata = @response.scan_metadata
-    Rails.logger.info("scan_answer metadata=#{metadata}")
-
-    conversation_id = resolve_conversation_reference(@response, metadata)
-    message_id = metadata['message_id']
-    Rails.logger.info(
-      "scan_answer conversation_id=#{conversation_id} message_id=#{message_id} " \
-      "documentable_type=#{@response.documentable_type} documentable_id=#{@response.documentable_id}"
-    )
-
-    unless conversation_id.present?
-      render json: {
-        success: false,
-        error: 'FAQ này không có link đến conversation gốc'
-      }, status: :unprocessable_entity
+    base_url = chatbotlevan_base_url
+    unless base_url.present?
+      render json: { success: false, error: 'CHATBOTLEVAN_BASE_URL is not configured' }, status: :unprocessable_entity
       return
     end
 
-    conversation = find_conversation(conversation_id)
-    unless conversation
-      render json: { success: false, error: 'Không tìm thấy conversation' }, status: :not_found
+    response = post_chatbotlevan_json(
+      "#{base_url}/learning/faq/pending/#{@response.id}/scan",
+      { account_id: Current.account.id.to_s }
+    )
+    status = response.code.to_i
+    body = parse_chatbotlevan_json_body(response.body)
+
+    if status.between?(200, 299)
+      render json: body, status: :ok
       return
     end
 
-    question = resolved_question_for_scan(conversation, message_id, @response.question)
-    Rails.logger.info("scan_answer question=#{question}")
-
-    # Lấy context quanh message mục tiêu: 5 trước + 5 sau
-    messages_text = extract_messages_from_position(
-      conversation,
-      message_id,
-      SCAN_MESSAGES_BEFORE,
-      SCAN_MESSAGES_AFTER
+    Rails.logger.error(
+      "[Captain Pending] scan_answer_proxy_failed account_id=#{Current.account.id} response_id=#{@response.id} status=#{status} body=#{response.body}"
     )
-    Rails.logger.info("scan_answer messages_text_size=#{messages_text.to_s.length}")
-
-    # Dùng LLM để extract cả câu hỏi + câu trả lời
-    scan_hints = extract_scan_hints(@response.display_answer)
-    qa_suggestion = extract_faq_qa_with_llm(messages_text, question, scan_hints)
-    suggested_question = qa_suggestion[:question].presence || question
-    suggested_answer = qa_suggestion[:answer]
-    if answer_looks_like_customer_message?(suggested_answer, messages_text)
-      suggested_answer = '[Không tìm thấy câu trả lời]'
-    end
-    if suggested_answer.to_s.include?('[Không tìm thấy')
-      fallback_answer = extract_first_human_reply_after_target(
-        conversation,
-        message_id,
-        SCAN_MESSAGES_AFTER
-      )
-      fallback_answer = extract_first_agent_reply(messages_text) if fallback_answer.blank?
-      suggested_answer = fallback_answer if fallback_answer.present?
-    end
-    Rails.logger.info(
-      "scan_answer suggested_question=#{suggested_question} suggested_answer=#{suggested_answer}"
-    )
-
     render json: {
-      success: true,
-      suggested_question: suggested_question,
-      suggested_answer: suggested_answer,
-      conversation_id: conversation.display_id,
-      message_id: message_id
-    }
+      success: false,
+      error: body['detail'].presence || body['error'].presence || 'Lỗi khi scan answer'
+    }, status: :bad_gateway
   rescue StandardError => e
-    Rails.logger.error "scan_answer error: #{e.message}"
-    render json: { success: false, error: e.message }, status: :internal_server_error
+    Rails.logger.error "[Captain Pending] scan_answer_proxy_error response_id=#{@response.id} error=#{e.class}: #{e.message}"
+    render json: { success: false, error: e.message }, status: :bad_gateway
   end
 
   # Scan tất cả pending FAQs
   def scan_all_pending
-    pending_responses = Current.account.captain_assistant_responses.pending
-    pending_responses = pending_responses.where(assistant_id: params[:assistant_id]) if params[:assistant_id].present?
-
-    processed = 0
-    success_count = 0
-    failed_count = 0
-
-    pending_responses.find_each do |response|
-      begin
-        metadata = response.scan_metadata
-        conversation_id = resolve_conversation_reference(response, metadata)
-        message_id = metadata['message_id']
-
-        next unless conversation_id.present?
-
-        conversation = find_conversation(conversation_id)
-        next unless conversation
-
-        # Lấy context quanh message mục tiêu: 5 trước + 5 sau
-        messages_text = extract_messages_from_position(
-          conversation,
-          message_id,
-          SCAN_MESSAGES_BEFORE,
-          SCAN_MESSAGES_AFTER
-        )
-        scan_hints = extract_scan_hints(response.display_answer)
-        question = resolved_question_for_scan(conversation, message_id, response.question)
-        qa_suggestion = extract_faq_qa_with_llm(
-          messages_text,
-          question,
-          scan_hints
-        )
-        suggested_question = qa_suggestion[:question].presence || question
-        suggested_answer = qa_suggestion[:answer]
-        if answer_looks_like_customer_message?(suggested_answer, messages_text)
-          suggested_answer = '[Không tìm thấy câu trả lời]'
-        end
-        if suggested_answer.to_s.include?('[Không tìm thấy')
-          fallback_answer = extract_first_human_reply_after_target(
-            conversation,
-            message_id,
-            SCAN_MESSAGES_AFTER
-          )
-          fallback_answer = extract_first_agent_reply(messages_text) if fallback_answer.blank?
-          suggested_answer = fallback_answer if fallback_answer.present?
-        end
-
-        # Chỉ update nếu tìm thấy câu trả lời hợp lệ
-        if suggested_answer.present? && !suggested_answer.include?('[Không tìm thấy') && !suggested_answer.include?('[Lỗi')
-          response.update!(
-            question: suggested_question,
-            answer: suggested_answer,
-            status: :approved
-          )
-          success_count += 1
-        else
-          failed_count += 1
-        end
-
-        processed += 1
-      rescue StandardError => e
-        Rails.logger.error "scan_all_pending error for response #{response.id}: #{e.message}"
-        failed_count += 1
-        processed += 1
-      end
+    base_url = chatbotlevan_base_url
+    unless base_url.present?
+      render json: { error: 'CHATBOTLEVAN_BASE_URL is not configured' }, status: :unprocessable_entity
+      return
     end
 
+    payload = {
+      account_id: Current.account.id.to_s,
+      assistant_id: params[:assistant_id].presence
+    }.compact
+    response = post_chatbotlevan_json("#{base_url}/learning/faq/pending/scan", payload)
+    status = response.code.to_i
+    body = parse_chatbotlevan_json_body(response.body)
+
+    if status.between?(200, 299)
+      render json: body, status: :ok
+      return
+    end
+
+    Rails.logger.error(
+      "[Captain Pending] scan_all_proxy_failed account_id=#{Current.account.id} assistant_id=#{params[:assistant_id]} status=#{status} body=#{response.body}"
+    )
     render json: {
-      success: true,
-      processed: processed,
-      success: success_count,
-      failed: failed_count
-    }
+      error: body['detail'].presence || body['error'].presence || 'Lỗi khi scan all'
+    }, status: :bad_gateway
+  rescue StandardError => e
+    Rails.logger.error "[Captain Pending] scan_all_proxy_error account_id=#{Current.account.id} error=#{e.class}: #{e.message}"
+    render json: { error: e.message }, status: :bad_gateway
   end
 
   private
@@ -310,258 +225,31 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
       Current.account.conversations.find_by(display_id: conversation_reference)
   end
 
-  def resolve_conversation_reference(response, metadata)
-    metadata_conversation_id = metadata['conversation_id']
-    return metadata_conversation_id if metadata_conversation_id.present?
-    return response.documentable_id if response.documentable_type == 'Conversation'
-
-    nil
+  def chatbotlevan_base_url
+    ENV.fetch('CHATBOTLEVAN_BASE_URL', '').to_s.strip.chomp('/')
   end
 
-  def extract_faq_qa_with_llm(conversation_text, current_question, scan_hints = {})
-    reviewer_note = scan_hints[:reviewer_note].to_s.strip
-    incorrect_bot_answer = scan_hints[:incorrect_bot_answer].to_s.strip
+  def post_chatbotlevan_json(url, payload)
+    uri = URI.parse(url)
+    request = Net::HTTP::Post.new(uri.request_uri)
+    request['Content-Type'] = 'application/json'
 
-    prompt = <<~PROMPT
-      Từ đoạn hội thoại sau, hãy tạo FAQ gồm câu hỏi và câu trả lời chính xác.
-      
-      Câu hỏi hiện tại: #{current_question}
-      Bot answer bị đánh dấu sai: #{incorrect_bot_answer}
-      Reviewer note: #{reviewer_note}
-      
-      Hội thoại:
-      #{conversation_text}
-      
-      Yêu cầu:
-      1) Chỉ tạo FAQ cho ĐÚNG chủ đề của "Câu hỏi hiện tại" và "Reviewer note".
-      2) question: viết lại ngắn gọn theo ý khách hàng.
-      3) answer: lấy câu trả lời chính xác nhất, ưu tiên từ Nhân viên (không phải Bot).
-      4) Tuyệt đối KHÔNG lấy nội dung Khách hàng làm answer.
-      5) Nếu không tìm thấy câu trả lời phù hợp, answer phải là: [Không tìm thấy câu trả lời].
+    token = ENV.fetch('CHATBOTLEVAN_API_TOKEN', '').to_s.strip
+    request['Authorization'] = "Bearer #{token}" if token.present?
+    request.body = payload.to_json
 
-      Trả về CHỈ JSON hợp lệ:
-      {"question":"...","answer":"..."}
-    PROMPT
-
-    Rails.logger.info("scan_answer llm_prompt_size=#{prompt.to_s.length}")
-
-    chat = RubyLLM.chat(model: 'gpt-4o-mini')
-    response = chat.ask(prompt)
-    raw_content = response.content.to_s.strip
-    Rails.logger.info("scan_answer llm_raw_response=#{raw_content}")
-
-    parsed = parse_llm_json_response(raw_content)
-    suggested_question = parsed['question'].to_s.strip
-    suggested_answer = parsed['answer'].to_s.strip
-
-    {
-      question: suggested_question.presence || current_question.to_s.strip,
-      answer: suggested_answer
-    }
-  rescue StandardError => e
-    Rails.logger.error "extract_faq_qa_with_llm error: #{e.message}"
-    {
-      question: current_question.to_s.strip,
-      answer: "[Lỗi khi extract: #{e.message}]"
-    }
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = uri.scheme == 'https'
+    http.open_timeout = 10
+    http.read_timeout = 600
+    http.request(request)
   end
 
-  def parse_llm_json_response(raw_content)
-    fenced_json = raw_content.match(/```json\s*(\{.*?\})\s*```/m)
-    return JSON.parse(fenced_json[1]) if fenced_json
+  def parse_chatbotlevan_json_body(raw_body)
+    return {} if raw_body.blank?
 
-    inline_json = raw_content.match(/\{.*\}/m)
-    return JSON.parse(inline_json[0]) if inline_json
-
-    JSON.parse(raw_content)
-  end
-
-  def resolved_question_for_scan(conversation, message_id, fallback_question)
-    customer_question = extract_nearest_customer_question(conversation, message_id)
-    return customer_question if customer_question.present?
-
-    fallback_question.to_s.strip
-  end
-
-  def extract_nearest_customer_question(conversation, message_id)
-    return '' if message_id.blank?
-
-    all_messages = scan_messages_for(conversation)
-    target_index = all_messages.find_index { |message| message.id.to_s == message_id.to_s }
-    return '' unless target_index
-
-    question_message = all_messages[0...target_index].reverse.find do |message|
-      message.sender_type == 'Contact' && message.content.present?
-    end
-
-    question_message&.content.to_s.strip
-  end
-
-  def extract_scan_hints(display_answer)
-    sections = parse_pending_answer_sections(display_answer)
-    {
-      incorrect_bot_answer: sections[:bot_answer].to_s.strip,
-      reviewer_note: sections[:reviewer_note].to_s.strip
-    }
-  end
-
-  def parse_pending_answer_sections(text)
-    sections = {}
-    current_key = nil
-    current_lines = []
-
-    text.to_s.each_line do |line|
-      stripped = line.to_s.strip
-      matched_key, inline_content = section_key_from_line(stripped)
-
-      if matched_key
-        if current_key
-          sections[current_key] = current_lines.join("\n").strip
-        end
-        current_key = matched_key
-        current_lines = []
-        current_lines << inline_content if inline_content.present?
-      elsif current_key
-        current_lines << stripped if stripped.present?
-      end
-    end
-
-    sections[current_key] = current_lines.join("\n").strip if current_key
-    sections
-  end
-
-  def section_key_from_line(line)
-    case line
-    when /\ACustomer question:\s*(.*)\z/i
-      [:customer_question, Regexp.last_match(1).to_s.strip]
-    when /\ACâu hỏi khách hàng:\s*(.*)\z/i
-      [:customer_question, Regexp.last_match(1).to_s.strip]
-    when /\ABot answer marked as incorrect:\s*(.*)\z/i
-      [:bot_answer, Regexp.last_match(1).to_s.strip]
-    when /\ACâu trả lời bot bị đánh dấu sai:\s*(.*)\z/i
-      [:bot_answer, Regexp.last_match(1).to_s.strip]
-    when /\AReviewer note:\s*(.*)\z/i
-      [:reviewer_note, Regexp.last_match(1).to_s.strip]
-    when /\AGhi chú reviewer:\s*(.*)\z/i
-      [:reviewer_note, Regexp.last_match(1).to_s.strip]
-    when /\AGhi chú đánh giá:\s*(.*)\z/i
-      [:reviewer_note, Regexp.last_match(1).to_s.strip]
-    else
-      [nil, nil]
-    end
-  end
-
-  def answer_looks_like_customer_message?(answer_text, messages_text)
-    normalized_answer = normalize_scan_text(answer_text)
-    return false if normalized_answer.blank?
-
-    customer_messages = messages_text.to_s.lines.filter_map do |line|
-      stripped = line.to_s.strip
-      next unless stripped.start_with?('Khách hàng:')
-
-      normalize_scan_text(stripped.sub('Khách hàng:', ''))
-    end
-
-    customer_messages.any? do |customer_message|
-      customer_message.present? &&
-        (customer_message == normalized_answer ||
-         customer_message.include?(normalized_answer) ||
-         normalized_answer.include?(customer_message))
-    end
-  end
-
-  def normalize_scan_text(text)
-    text.to_s.downcase.gsub(/\s+/, ' ').strip
-  end
-
-  def extract_messages_from_position(conversation, message_id, before_limit = 5, after_limit = 5)
-    # Load chỉ tin nhắn chat thật (không activity/private/log trống)
-    all_messages = scan_messages_for(conversation)
-    Rails.logger.info(
-      "scan_answer total_messages=#{all_messages.size} " \
-      "target_message_id=#{message_id} before_limit=#{before_limit} after_limit=#{after_limit}"
-    )
-
-    before_count = [before_limit.to_i, 0].max
-    after_count = [after_limit.to_i, 0].max
-    window_size = before_count + after_count + 1
-
-    if message_id.present?
-      # Tìm index của tin nhắn có message_id
-      target_index = all_messages.find_index { |m| m.id.to_s == message_id.to_s }
-      Rails.logger.info("scan_answer target_index=#{target_index}")
-      if target_index
-        context_start = [target_index - before_count, 0].max
-        context_end = [target_index + after_count, all_messages.size - 1].min
-        messages = all_messages[context_start..context_end] || []
-      else
-        # Không tìm thấy message_id -> lấy context cuối cùng
-        messages = all_messages.last(window_size)
-      end
-    else
-      # Không có message_id -> lấy context cuối cùng
-      messages = all_messages.last(window_size)
-    end
-    Rails.logger.info("scan_answer selected_message_ids=#{messages.map(&:id)}")
-
-    # Format messages thành text
-    messages_text = messages.map do |msg|
-      sender_type = scan_sender_label(msg)
-      "#{sender_type}: #{msg.content}"
-    end.join("\n")
-    Rails.logger.info("scan_answer messages_text=\n#{messages_text}")
-
-    messages_text
-  end
-
-  def scan_sender_label(message)
-    return 'Khách hàng' if message.sender_type == 'Contact'
-    return 'Bot' if bot_generated_message?(message)
-
-    'Nhân viên'
-  end
-
-  def bot_generated_message?(message)
-    attributes = message.content_attributes
-    attributes = JSON.parse(attributes) if attributes.is_a?(String)
-    return false unless attributes.is_a?(Hash)
-
-    raw_flag = attributes['is_bot_generated']
-    raw_flag = attributes[:is_bot_generated] if raw_flag.nil?
-
-    ActiveModel::Type::Boolean.new.cast(raw_flag)
+    JSON.parse(raw_body)
   rescue JSON::ParserError
-    false
-  end
-
-  def extract_first_agent_reply(messages_text)
-    return '' if messages_text.blank?
-
-    lines = messages_text.split("\n").map(&:strip).reject(&:blank?)
-    agent_line = lines.reverse.find { |line| line.start_with?('Nhân viên:') }
-    agent_line&.sub('Nhân viên:', '')&.strip.to_s
-  end
-
-  def extract_first_human_reply_after_target(conversation, message_id, after_limit = 5)
-    return '' if message_id.blank?
-
-    all_messages = scan_messages_for(conversation)
-    target_index = all_messages.find_index { |message| message.id.to_s == message_id.to_s }
-    return '' unless target_index
-
-    trailing_messages = all_messages[(target_index + 1), [after_limit.to_i, 0].max] || []
-    human_reply = trailing_messages.find do |message|
-      message.content.present? &&
-        message.sender_type != 'Contact' &&
-        !bot_generated_message?(message)
-    end
-
-    human_reply&.content.to_s.strip
-  end
-
-  def scan_messages_for(conversation)
-    conversation.messages.chat.reorder(:created_at).to_a.select do |message|
-      message.content.to_s.strip.present?
-    end
+    { 'raw' => raw_body.to_s }
   end
 end

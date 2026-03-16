@@ -1,5 +1,6 @@
 json.account_id resource.account_id
 json.answer resource.display_answer
+json.scan_metadata resource.scan_metadata
 json.assistant do
   json.partial! 'api/v1/models/captain/assistant', formats: [:json], resource: resource.assistant
 end

@@ -339,4 +339,105 @@ RSpec.describe 'Api::V1::Accounts::Captain::AssistantResponses', type: :request 
       end
     end
   end
+
+  describe 'POST /api/v1/accounts/:account_id/captain/assistant_responses/:id/scan_answer' do
+    let!(:response_record) do
+      create(
+        :captain_assistant_response,
+        account: account,
+        assistant: assistant,
+        documentable: create(:conversation, account: account),
+        status: :pending
+      )
+    end
+
+    it 'proxies scan_answer to chatbotlevan and returns the suggestion payload' do
+      fake_response = instance_double(
+        Net::HTTPOK,
+        code: '200',
+        body: {
+          success: true,
+          response_id: response_record.id,
+          suggested_question: 'Question from backend',
+          suggested_answer: 'Answer from backend'
+        }.to_json
+      )
+
+      allow_any_instance_of(Api::V1::Accounts::Captain::AssistantResponsesController)
+        .to receive(:chatbotlevan_base_url)
+        .and_return('http://chatbotlevan.local')
+      expect_any_instance_of(Api::V1::Accounts::Captain::AssistantResponsesController)
+        .to receive(:post_chatbotlevan_json)
+        .with(
+          "http://chatbotlevan.local/learning/faq/pending/#{response_record.id}/scan",
+          { account_id: account.id.to_s }
+        )
+        .and_return(fake_response)
+
+      post "/api/v1/accounts/#{account.id}/captain/assistant_responses/#{response_record.id}/scan_answer",
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(json_response[:suggested_question]).to eq('Question from backend')
+      expect(json_response[:suggested_answer]).to eq('Answer from backend')
+    end
+
+    it 'maps chatbotlevan errors to bad_gateway' do
+      fake_response = instance_double(
+        Net::HTTPBadGateway,
+        code: '502',
+        body: { detail: 'upstream failed' }.to_json
+      )
+
+      allow_any_instance_of(Api::V1::Accounts::Captain::AssistantResponsesController)
+        .to receive(:chatbotlevan_base_url)
+        .and_return('http://chatbotlevan.local')
+      allow_any_instance_of(Api::V1::Accounts::Captain::AssistantResponsesController)
+        .to receive(:post_chatbotlevan_json)
+        .and_return(fake_response)
+
+      post "/api/v1/accounts/#{account.id}/captain/assistant_responses/#{response_record.id}/scan_answer",
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:bad_gateway)
+      expect(json_response[:error]).to eq('upstream failed')
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/captain/assistant_responses/scan_all_pending' do
+    it 'proxies scan_all_pending to chatbotlevan and preserves summary counts' do
+      fake_response = instance_double(
+        Net::HTTPOK,
+        code: '200',
+        body: {
+          processed: 7,
+          success: 5,
+          failed: 2
+        }.to_json
+      )
+
+      allow_any_instance_of(Api::V1::Accounts::Captain::AssistantResponsesController)
+        .to receive(:chatbotlevan_base_url)
+        .and_return('http://chatbotlevan.local')
+      expect_any_instance_of(Api::V1::Accounts::Captain::AssistantResponsesController)
+        .to receive(:post_chatbotlevan_json) do |_, url, payload|
+          expect(url).to eq('http://chatbotlevan.local/learning/faq/pending/scan')
+          expect(payload[:account_id].to_s).to eq(account.id.to_s)
+          expect(payload[:assistant_id].to_s).to eq(assistant.id.to_s)
+          fake_response
+        end
+
+      post "/api/v1/accounts/#{account.id}/captain/assistant_responses/scan_all_pending",
+           params: { assistant_id: assistant.id },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(json_response[:processed]).to eq(7)
+      expect(json_response[:success]).to eq(5)
+      expect(json_response[:failed]).to eq(2)
+    end
+  end
 end

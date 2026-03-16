@@ -62,6 +62,7 @@ const paymentReviewActionLoading = ref(new Set());
 const isPaymentReviewLoadingMore = ref(false);
 
 const paymentReviewTableContainer = ref(null);
+const conversationSectionRef = ref(null);
 const managerAiHandoffQueue = ref([]);
 const isManagerQueuesLoading = ref(false);
 const managerQueuesError = ref('');
@@ -997,15 +998,30 @@ const queueItemTitle = item => {
     item?.contact_name ||
     item?.contact_id ||
     item?.conversation_display_id ||
-    `Conversation #${item?.conversation_id || '--'}`
+    `Hội thoại #${item?.conversation_id || '--'}`
   );
 };
 
-const openAiControlConversation = conversationId => {
+const queueReasonLabel = reason => {
+  const normalized = normalizeLabelKey(reason || HANDOFF_LABEL);
+  if (normalized === HANDOFF_LABEL) return 'Chờ nhân viên phản hồi';
+
+  return toTitleCase(labelDisplayName(normalized)) || 'Chờ nhân viên phản hồi';
+};
+
+const scrollToConversationSection = async () => {
+  await nextTick();
+  conversationSectionRef.value?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start',
+  });
+};
+
+const openAiControlConversation = async conversationId => {
   const normalizedId = String(conversationId || '').trim();
   if (!normalizedId) return;
 
-  router.push({
+  await router.push({
     name: props.standalone
       ? 'ai_control_simple_conversation'
       : 'ai_control_panel_conversation',
@@ -1014,6 +1030,8 @@ const openAiControlConversation = conversationId => {
       conversation_id: normalizedId,
     },
   });
+
+  await scrollToConversationSection();
 };
 
 const fetchManagerQueues = async () => {
@@ -1033,7 +1051,7 @@ const fetchManagerQueues = async () => {
     managerQueuesError.value =
       error?.response?.data?.error ||
       error?.response?.data?.detail?.error ||
-      'Không tải được hàng chờ handoff.';
+      'Không tải được danh sách chờ nhân viên phản hồi.';
     useAlert(managerQueuesError.value);
   } finally {
     isManagerQueuesLoading.value = false;
@@ -1613,10 +1631,10 @@ onBeforeUnmount(() => {
                 <div class="flex flex-wrap items-center justify-between gap-4">
                   <div class="flex flex-col gap-1">
                     <div class="text-lg font-semibold tracking-tight text-n-slate-12">
-                      Handoff đang chờ nhân viên
+                      Đang chờ nhân viên phản hồi
                     </div>
                     <div class="text-sm font-medium text-n-slate-11/80">
-                      Chỉ giữ lại queue `ai_handoff` chưa được phản hồi công khai sau handoff.
+                      Chỉ giữ lại các hội thoại có nhãn `ai_handoff` và chưa có phản hồi công khai mới sau khi chuyển cho nhân viên.
                     </div>
                   </div>
                   <Button
@@ -1624,7 +1642,7 @@ onBeforeUnmount(() => {
                     size="sm"
                     class="h-9 shadow-sm"
                     :is-loading="isManagerQueuesLoading"
-                    label="Làm mới handoff"
+                    label="Làm mới danh sách"
                     @click="fetchManagerQueues"
                   />
                 </div>
@@ -1640,32 +1658,34 @@ onBeforeUnmount(() => {
 
                 <div class="rounded-2xl border border-n-ruby-4 bg-n-ruby-2/60 px-4 py-4">
                   <div class="text-[11px] font-semibold uppercase tracking-wide text-n-ruby-11">
-                    Queue hiện tại
+                    Danh sách hiện tại
                   </div>
                   <div class="mt-2 text-3xl font-bold text-n-ruby-12">
                     {{ managerAiHandoffQueue.length.toLocaleString() }}
                   </div>
                   <div class="mt-1 text-sm text-n-ruby-11">
-                    {{ managerAiHandoffQueue.length ? 'Case cần nhân viên xử lý ngay' : 'Hiện không có case chờ' }}
+                    {{ managerAiHandoffQueue.length ? 'Hội thoại cần nhân viên phản hồi ngay' : 'Hiện không có hội thoại nào đang chờ' }}
                   </div>
                 </div>
 
                 <div class="rounded-2xl border border-n-slate-3 bg-n-solid-2/40 p-5">
                   <div class="text-sm font-semibold text-n-slate-12">
-                    Danh sách handoff chờ
+                    Danh sách đang chờ phản hồi
                   </div>
                   <div class="mt-1 text-xs text-n-slate-11">
-                    Chỉ hiển thị conversation còn nhãn `ai_handoff` và tin nhắn khách gần nhất chưa có phản hồi công khai mới hơn.
+                    Chỉ hiển thị các hội thoại còn nhãn `ai_handoff` và tin nhắn khách gần nhất chưa có phản hồi công khai mới hơn.
                   </div>
 
-                  <div class="mt-4 flex flex-col gap-3">
+                  <div
+                    class="mt-4 flex max-h-[30.25rem] flex-col gap-3 overflow-y-auto pr-2"
+                  >
                     <button
                       v-for="item in managerAiHandoffQueue"
                       :key="`handoff-${item.conversation_id}`"
-                      class="rounded-xl border border-n-slate-3 bg-n-solid-1 px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-n-ruby-4 hover:shadow-sm"
+                      class="h-28 rounded-xl border border-n-slate-3 bg-n-solid-1 px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-n-ruby-4 hover:shadow-sm"
                       @click="openAiControlConversation(item.conversation_id)"
                     >
-                      <div class="flex items-center justify-between gap-3">
+                      <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
                           <div class="truncate text-sm font-semibold text-n-slate-12">
                             {{ queueItemTitle(item) }}
@@ -1675,7 +1695,7 @@ onBeforeUnmount(() => {
                           </div>
                         </div>
                         <span class="rounded-full bg-n-ruby-3 px-2.5 py-1 text-[11px] font-semibold text-n-ruby-12">
-                          {{ item.handoff_reason || 'ai_handoff' }}
+                          {{ queueReasonLabel(item.handoff_reason) }}
                         </span>
                       </div>
                       <div class="mt-2 text-sm text-n-slate-11 line-clamp-2">
@@ -1687,7 +1707,7 @@ onBeforeUnmount(() => {
                       v-if="!managerAiHandoffQueue.length && !isManagerQueuesLoading"
                       class="rounded-xl border border-dashed border-n-slate-4 px-4 py-6 text-center text-sm text-n-slate-11"
                     >
-                      Không có handoff nào đang chờ.
+                      Không có hội thoại nào đang chờ nhân viên phản hồi.
                     </div>
                   </div>
                 </div>
@@ -2044,7 +2064,10 @@ onBeforeUnmount(() => {
             </woot-modal>
 
             <!-- ===== SECTION 2: Hội thoại (CHÍNH) + Sidebar tools ===== -->
-            <div class="grid gap-6 lg:grid-cols-12 lg:items-start">
+            <div
+              ref="conversationSectionRef"
+              class="grid gap-6 lg:grid-cols-12 lg:items-start"
+            >
               <!-- ConversationView — chiếm 8/12 cột -->
               <div
                 class="lg:col-span-8 xl:col-span-9 self-start rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm overflow-hidden"
