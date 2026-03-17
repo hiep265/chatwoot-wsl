@@ -1,20 +1,23 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
-import ChannelFactory from './ChannelFactory.vue';
 
-import SettingsContent from '../Wrapper.vue';
-import SettingWrapper from '../SettingsWrapper.vue';
-import InboxHome from './Index.vue';
-import Settings from './Settings.vue';
-import InboxChannel from './InboxChannels.vue';
-import ChannelList from './ChannelList.vue';
-import AddAgents from './AddAgents.vue';
-import FinishSetup from './FinishSetup.vue';
+const ChannelFactory = () => import('./ChannelFactory.vue');
+const SettingsContent = () => import('../Wrapper.vue');
+const SettingWrapper = () => import('../SettingsWrapper.vue');
+const InboxHome = () => import('./Index.vue');
+const Settings = () => import('./Settings.vue');
+const InboxChannel = () => import('./InboxChannels.vue');
+const ChannelList = () => import('./ChannelList.vue');
+const AddAgents = () => import('./AddAgents.vue');
+const FinishSetup = () => import('./FinishSetup.vue');
 
 export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/settings/inboxes'),
+      meta: {
+        asyncStoreModules: ['agentBots'],
+      },
       component: SettingWrapper,
       children: [
         {
@@ -36,6 +39,9 @@ export default {
     },
     {
       path: frontendURL('accounts/:accountId/settings/inboxes'),
+      meta: {
+        asyncStoreModules: ['agentBots'],
+      },
       component: SettingsContent,
       props: params => {
         const showBackButton = params.name !== 'settings_inbox_list';

@@ -2,20 +2,25 @@ import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
 import { frontendURL } from '../../../helper/URLHelper';
 
-import CaptainPageRouteView from './pages/CaptainPageRouteView.vue';
-import AssistantsIndexPage from './pages/AssistantsIndexPage.vue';
-import AssistantEmptyStateIndex from './assistants/Index.vue';
+const CaptainPageRouteView = () => import('./pages/CaptainPageRouteView.vue');
+const AssistantsIndexPage = () => import('./pages/AssistantsIndexPage.vue');
+const AssistantEmptyStateIndex = () => import('./assistants/Index.vue');
 
-import AssistantSettingsIndex from './assistants/settings/Settings.vue';
-import AssistantInboxesIndex from './assistants/inboxes/Index.vue';
-import AssistantPlaygroundIndex from './assistants/playground/Index.vue';
-import AssistantGuardrailsIndex from './assistants/guardrails/Index.vue';
-import AssistantGuidelinesIndex from './assistants/guidelines/Index.vue';
-import AssistantScenariosIndex from './assistants/scenarios/Index.vue';
-import DocumentsIndex from './documents/Index.vue';
-import ResponsesIndex from './responses/Index.vue';
-import ResponsesPendingIndex from './responses/Pending.vue';
-import CustomToolsIndex from './tools/Index.vue';
+const AssistantSettingsIndex = () =>
+  import('./assistants/settings/Settings.vue');
+const AssistantInboxesIndex = () => import('./assistants/inboxes/Index.vue');
+const AssistantPlaygroundIndex = () =>
+  import('./assistants/playground/Index.vue');
+const AssistantGuardrailsIndex = () =>
+  import('./assistants/guardrails/Index.vue');
+const AssistantGuidelinesIndex = () =>
+  import('./assistants/guidelines/Index.vue');
+const AssistantScenariosIndex = () =>
+  import('./assistants/scenarios/Index.vue');
+const DocumentsIndex = () => import('./documents/Index.vue');
+const ResponsesIndex = () => import('./responses/Index.vue');
+const ResponsesPendingIndex = () => import('./responses/Pending.vue');
+const CustomToolsIndex = () => import('./tools/Index.vue');
 
 const meta = {
   permissions: ['administrator', 'agent'],

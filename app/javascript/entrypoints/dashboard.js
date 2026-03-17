@@ -20,7 +20,6 @@ import { createPinia } from 'pinia';
 import router, { initalizeRouter } from 'dashboard/routes';
 import store from 'dashboard/store';
 import constants from 'dashboard/constants/globals';
-import * as Sentry from '@sentry/vue';
 import {
   initializeAnalyticsEvents,
   initializeChatwootEvents,
@@ -28,8 +27,9 @@ import {
 import FluentIcon from 'shared/components/FluentIcon/DashboardIcon.vue';
 import VueDOMPurifyHTML from 'vue-dompurify-html';
 import { domPurifyConfig } from 'shared/helpers/HTMLSanitizer.js';
+import { resizeObserver } from 'shared/directives/resizeObserver';
+import { initializeSentry } from 'shared/helpers/sentry';
 
-import { vResizeObserver } from '@vueuse/components';
 import { directive as onClickaway } from 'vue3-click-away';
 
 import 'floating-vue/dist/style.css';
@@ -50,30 +50,7 @@ app.use(store);
 app.use(pinia);
 app.use(router);
 
-// [VITE] Disabled this, need to renable later
-if (window.errorLoggingConfig) {
-  Sentry.init({
-    app,
-    dsn: window.errorLoggingConfig,
-    denyUrls: [
-      // Chrome extensions
-      /^chrome:\/\//i,
-      /chrome-extension:/i,
-      /extensions\//i,
-
-      // Locally saved copies
-      /file:\/\//i,
-
-      // Safari extensions.
-      /safari-web-extension:/i,
-      /safari-extension:/i,
-    ],
-    integrations: [Sentry.browserTracingIntegration({ router })],
-    ignoreErrors: [
-      'ResizeObserver loop completed with undelivered notifications',
-    ],
-  });
-}
+void initializeSentry({ app, router });
 
 app.use(VueDOMPurifyHTML, domPurifyConfig);
 app.use(WootUiKit);
@@ -96,7 +73,7 @@ app.component('multiselect', Multiselect);
 app.component('woot-wizard', WootWizard);
 app.component('fluent-icon', FluentIcon);
 
-app.directive('resize', vResizeObserver);
+app.directive('resize', resizeObserver);
 app.directive('on-clickaway', onClickaway);
 
 // load common helpers into js
@@ -110,6 +87,16 @@ initializeChatwootEvents();
 initializeAnalyticsEvents();
 initalizeRouter();
 
-window.onload = () => {
+let isMounted = false;
+
+const mountApp = () => {
+  if (isMounted) return;
+  isMounted = true;
   app.mount('#app');
 };
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', mountApp, { once: true });
+} else {
+  mountApp();
+}

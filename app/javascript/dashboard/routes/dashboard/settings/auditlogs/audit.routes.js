@@ -2,13 +2,16 @@ import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
 import { frontendURL } from '../../../../helper/URLHelper';
 
-import SettingsWrapper from '../SettingsWrapper.vue';
-import AuditLogsHome from './Index.vue';
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const AuditLogsHome = () => import('./Index.vue');
 
 export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/settings/audit-logs'),
+      meta: {
+        asyncStoreModules: ['auditlogs'],
+      },
       component: SettingsWrapper,
       children: [
         {

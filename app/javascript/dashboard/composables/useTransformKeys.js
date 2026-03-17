@@ -3,7 +3,7 @@
 import { unref } from 'vue';
 import camelcaseKeys from 'camelcase-keys';
 import snakecaseKeys from 'snakecase-keys';
-import * as Sentry from '@sentry/vue';
+import { captureExceptionWithContext } from 'shared/helpers/sentry';
 
 /**
  * Vue composable that converts object keys to camelCase
@@ -17,12 +17,15 @@ export function useCamelCase(payload, options) {
     const unrefPayload = unref(payload);
     return camelcaseKeys(unrefPayload, options);
   } catch (e) {
-    Sentry.setContext('transform-keys-error', {
-      payload,
-      options,
-      op: 'camelCase',
-    });
-    Sentry.captureException(e);
+    void captureExceptionWithContext(
+      'transform-keys-error',
+      {
+        payload,
+        options,
+        op: 'camelCase',
+      },
+      e
+    );
     return payload;
   }
 }
@@ -39,12 +42,15 @@ export function useSnakeCase(payload, options) {
     const unrefPayload = unref(payload);
     return snakecaseKeys(unrefPayload, options);
   } catch (e) {
-    Sentry.setContext('transform-keys-error', {
-      payload,
-      options,
-      op: 'snakeCase',
-    });
-    Sentry.captureException(e);
+    void captureExceptionWithContext(
+      'transform-keys-error',
+      {
+        payload,
+        options,
+        op: 'snakeCase',
+      },
+      e
+    );
     return payload;
   }
 }

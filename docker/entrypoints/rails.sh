@@ -4,7 +4,10 @@ set -x
 
 # Remove a potentially pre-existing server.pid for Rails.
 rm -rf /app/tmp/pids/server.pid
-rm -rf /app/tmp/cache/*
+
+if [ "${RESET_APP_CACHE_ON_BOOT:-false}" = "true" ]; then
+  rm -rf /app/tmp/cache/*
+fi
 
 echo "Waiting for postgres to become ready...."
 
@@ -20,15 +23,8 @@ done
 
 echo "Database ready to accept connections."
 
-#install missing gems for local dev as we are using base image compiled for production
-bundle install
-
-BUNDLE="bundle check"
-
-until $BUNDLE
-do
-  sleep 2;
-done
+# Install missing gems only when the lockfile and bundle state require it.
+bundle check || bundle install
 
 # Execute the main process of the container
 exec "$@"

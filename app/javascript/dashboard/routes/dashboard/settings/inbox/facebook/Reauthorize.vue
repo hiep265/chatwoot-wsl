@@ -4,7 +4,7 @@ import InboxReconnectionRequired from '../components/InboxReconnectionRequired.v
 import { useAlert } from 'dashboard/composables';
 
 import { loadScript } from 'dashboard/helper/DOMHelpers';
-import * as Sentry from '@sentry/vue';
+import { captureException } from 'shared/helpers/sentry';
 
 export default {
   components: {
@@ -56,7 +56,7 @@ export default {
           useAlert(this.$t('INBOX_MGMT.DETAILS.ERROR_FB_LOADING'));
         } else {
           // if the error was anything else, we capture it and show a toast
-          Sentry.captureException(error);
+          void captureException(error);
           useAlert(this.$t('INBOX_MGMT.DETAILS.ERROR_FB_AUTH'));
         }
       }

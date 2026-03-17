@@ -1,7 +1,8 @@
 import { frontendURL } from '../../../helper/URLHelper';
-import CompaniesIndex from './pages/CompaniesIndex.vue';
 import { FEATURE_FLAGS } from '../../../featureFlags';
 import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
+
+const CompaniesIndex = () => import('./pages/CompaniesIndex.vue');
 
 const commonMeta = {
   featureFlag: FEATURE_FLAGS.COMPANIES,

@@ -11,11 +11,11 @@ import {
 } from './helpers/actionHelpers';
 import messageReadActions from './actions/messageReadActions';
 import messageTranslateActions from './actions/messageTranslateActions';
-import * as Sentry from '@sentry/vue';
 import {
   handleVoiceCallCreated,
   handleVoiceCallUpdated,
 } from 'dashboard/helper/voice';
+import { captureExceptionWithContext } from 'shared/helpers/sentry';
 
 export const hasMessageFailedWithExternalError = pendingMessage => {
   // This helper is used to check if the message has failed with an external error.
@@ -111,10 +111,13 @@ const actions = {
       attachments = data.payload;
     } catch (error) {
       // in case of error, log the error and continue
-      Sentry.setContext('Conversation', {
-        id: conversationId,
-      });
-      Sentry.captureException(error);
+      void captureExceptionWithContext(
+        'Conversation',
+        {
+          id: conversationId,
+        },
+        error
+      );
     } finally {
       // we run the commit even if the request fails
       // this ensures that the `attachment` variable is always present on chat

@@ -1,7 +1,8 @@
 import { frontendURL } from '../../../helper/URLHelper';
-import ContactsIndex from './pages/ContactsIndex.vue';
-import ContactManageView from './pages/ContactManageView.vue';
 import { FEATURE_FLAGS } from '../../../featureFlags';
+
+const ContactsIndex = () => import('./pages/ContactsIndex.vue');
+const ContactManageView = () => import('./pages/ContactManageView.vue');
 
 const commonMeta = {
   featureFlag: FEATURE_FLAGS.CRM,

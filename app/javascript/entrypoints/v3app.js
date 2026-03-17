@@ -2,7 +2,6 @@ import { createApp } from 'vue';
 import { createI18n } from 'vue-i18n';
 
 import i18nMessages from 'dashboard/i18n';
-import * as Sentry from '@sentry/vue';
 import {
   initializeAnalyticsEvents,
   initializeChatwootEvents,
@@ -11,6 +10,7 @@ import App from '../v3/App.vue';
 import router, { initalizeRouter } from '../v3/views/index';
 import store from '../v3/store';
 import FluentIcon from 'shared/components/FluentIcon/DashboardIcon.vue';
+import { initializeSentry } from 'shared/helpers/sentry';
 // import { emitter } from '../shared/helpers/mitt';
 
 // [VITE] This was added in https://github.com/chatwoot/chatwoot/commit/b57063a8b83c86819bd285f481298d7cd38ad50e
@@ -33,34 +33,22 @@ app.use(router);
 // Vue.prototype.$emitter = emitter;
 app.component('fluent-icon', FluentIcon);
 
-if (window.errorLoggingConfig) {
-  Sentry.init({
-    app,
-    dsn: window.errorLoggingConfig,
-    denyUrls: [
-      // Chrome extensions
-      /^chrome:\/\//i,
-      /chrome-extension:/i,
-      /extensions\//i,
-
-      // Locally saved copies
-      /file:\/\//i,
-
-      // Safari extensions.
-      /safari-web-extension:/i,
-      /safari-extension:/i,
-    ],
-    integrations: [Sentry.browserTracingIntegration({ router })],
-    ignoreErrors: [
-      'ResizeObserver loop completed with undelivered notifications',
-    ],
-  });
-}
+void initializeSentry({ app, router });
 
 initializeChatwootEvents();
 initializeAnalyticsEvents();
 initalizeRouter();
 
-window.onload = () => {
+let isMounted = false;
+
+const mountApp = () => {
+  if (isMounted) return;
+  isMounted = true;
   app.mount('#app');
 };
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', mountApp, { once: true });
+} else {
+  mountApp();
+}

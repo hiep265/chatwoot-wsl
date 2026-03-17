@@ -29,13 +29,11 @@ const frontendUrl = process.env.FRONTEND_URL
   ? new URL(process.env.FRONTEND_URL)
   : null;
 const frontendHostname = frontendUrl?.hostname;
-const frontendProtocol =
-  frontendUrl?.protocol === 'https:' ? 'wss' : 'ws';
-const frontendClientPort = frontendUrl?.port
-  ? Number(frontendUrl.port)
-  : frontendUrl?.protocol === 'https:'
-    ? 443
-    : 80;
+const hmrHost = process.env.VITE_HMR_HOST;
+const hmrProtocol = process.env.VITE_HMR_PROTOCOL;
+const hmrClientPort = process.env.VITE_HMR_CLIENT_PORT
+  ? Number(process.env.VITE_HMR_CLIENT_PORT)
+  : undefined;
 
 const vueOptions = {
   template: {
@@ -63,12 +61,11 @@ export default defineConfig({
       '127.0.0.1',
       ...(frontendHostname ? [frontendHostname] : []),
     ],
-    hmr: frontendHostname
+    hmr: hmrHost
       ? {
-          host: frontendHostname,
-          protocol: frontendProtocol,
-          clientPort: frontendClientPort,
-          path: '/vite-dev/',
+          host: hmrHost,
+          protocol: hmrProtocol,
+          clientPort: hmrClientPort,
         }
       : undefined,
   },

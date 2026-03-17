@@ -1,28 +1,28 @@
 import { frontendURL } from '../../../../helper/URLHelper';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 
-import ReportsWrapper from './components/ReportsWrapper.vue';
-import Index from './Index.vue';
+const ReportsWrapper = () => import('./components/ReportsWrapper.vue');
+const Index = () => import('./Index.vue');
 
-import AgentReportsIndex from './AgentReportsIndex.vue';
-import InboxReportsIndex from './InboxReportsIndex.vue';
-import TeamReportsIndex from './TeamReportsIndex.vue';
-import LabelReportsIndex from './LabelReportsIndex.vue';
+const AgentReportsIndex = () => import('./AgentReportsIndex.vue');
+const InboxReportsIndex = () => import('./InboxReportsIndex.vue');
+const TeamReportsIndex = () => import('./TeamReportsIndex.vue');
+const LabelReportsIndex = () => import('./LabelReportsIndex.vue');
 
-import AgentReportsShow from './AgentReportsShow.vue';
-import InboxReportsShow from './InboxReportsShow.vue';
-import TeamReportsShow from './TeamReportsShow.vue';
-import LabelReportsShow from './LabelReportsShow.vue';
+const AgentReportsShow = () => import('./AgentReportsShow.vue');
+const InboxReportsShow = () => import('./InboxReportsShow.vue');
+const TeamReportsShow = () => import('./TeamReportsShow.vue');
+const LabelReportsShow = () => import('./LabelReportsShow.vue');
 
-import AgentReports from './AgentReports.vue';
-import InboxReports from './InboxReports.vue';
-import LabelReports from './LabelReports.vue';
-import TeamReports from './TeamReports.vue';
+const AgentReports = () => import('./AgentReports.vue');
+const InboxReports = () => import('./InboxReports.vue');
+const LabelReports = () => import('./LabelReports.vue');
+const TeamReports = () => import('./TeamReports.vue');
 
-import CsatResponses from './CsatResponses.vue';
-import BotReports from './BotReports.vue';
-import LiveReports from './LiveReports.vue';
-import SLAReports from './SLAReports.vue';
+const CsatResponses = () => import('./CsatResponses.vue');
+const BotReports = () => import('./BotReports.vue');
+const LiveReports = () => import('./LiveReports.vue');
+const SLAReports = () => import('./SLAReports.vue');
 
 const meta = {
   featureFlag: FEATURE_FLAGS.REPORTS,
@@ -128,6 +128,9 @@ export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/reports'),
+      meta: {
+        asyncStoreModules: ['reports', 'summaryReports', 'slaReports', 'csat'],
+      },
       component: ReportsWrapper,
       children: [
         {

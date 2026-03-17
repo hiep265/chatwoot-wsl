@@ -1,7 +1,19 @@
-import { Device } from '@twilio/voice-sdk';
 import VoiceAPI from './voiceAPIClient';
 
 const createCallDisconnectedEvent = () => new CustomEvent('call:disconnected');
+let deviceModulePromise = null;
+
+const loadDevice = async () => {
+  if (!deviceModulePromise) {
+    deviceModulePromise = import('@twilio/voice-sdk').catch(error => {
+      deviceModulePromise = null;
+      throw error;
+    });
+  }
+
+  const { Device } = await deviceModulePromise;
+  return Device;
+};
 
 class TwilioVoiceClient extends EventTarget {
   constructor() {
@@ -18,6 +30,7 @@ class TwilioVoiceClient extends EventTarget {
     const response = await VoiceAPI.getToken(inboxId);
     const { token, account_id } = response || {};
     if (!token) throw new Error('Invalid token');
+    const Device = await loadDevice();
 
     this.device = new Device(token, {
       allowIncomingWhileBusy: true,

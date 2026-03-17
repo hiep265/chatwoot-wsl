@@ -1,8 +1,8 @@
 <script setup>
 import { computed } from 'vue';
 import Icon from 'next/icon/Icon.vue';
-import * as Sentry from '@sentry/vue';
 import FormSelect from 'v3/components/Form/Select.vue';
+import { captureException } from 'shared/helpers/sentry';
 
 const props = defineProps({
   value: {
@@ -57,7 +57,7 @@ const playAudio = async () => {
     audio.src = `/audio/dashboard/${selectedValue.value}.mp3`;
     await audio.play();
   } catch (error) {
-    Sentry.captureException(error);
+    void captureException(error);
   }
 };
 </script>
