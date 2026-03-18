@@ -267,18 +267,349 @@ const averageBotMessagesPerConversation = computed(() => {
   return Math.round((messages / conversations) * 10) / 10;
 });
 
-const topHandoverReasons = computed(() => {
-  const rows = Array.isArray(trackedLabelRows.value)
-    ? trackedLabelRows.value
-    : [];
-  return rows
-    .filter(r => {
-      const name = normalizeLabelKey(r?.name);
-      return name.startsWith('ly_do_handoff_') || name.startsWith('handover_');
-    })
-    .sort((a, b) => (b.conversationsCount || 0) - (a.conversationsCount || 0))
-    .slice(0, 5);
+const AI_GROWTH_RANGE_OPTIONS = [
+  { key: '1m', label: '1T', days: 30 },
+  { key: '3m', label: '3T', days: 90 },
+  { key: '6m', label: '6T', days: 180 },
+  { key: '1y', label: '1N', days: 365 },
+];
+
+const TREND_METRIC_OPTIONS = [
+  { key: 'revenue', label: 'Doanh thu' },
+  { key: 'new_clients', label: 'Khách mới' },
+  { key: 'close_rate', label: 'Tỉ lệ chốt' },
+  { key: 'return_clients', label: 'Khách quay lại' },
+];
+
+const aiGrowthRange = ref('3m');
+const activeTrendMetric = ref('revenue');
+const aiGrowthSeries = ref([]);
+const isAiGrowthLoading = ref(false);
+const aiGrowthError = ref('');
+
+const aiGrowthRangeLabel = computed(() => {
+  const option = AI_GROWTH_RANGE_OPTIONS.find(
+    item => item.key === aiGrowthRange.value
+  );
+  return option?.label || '3T';
 });
+
+const activeTrendMetricLabel = computed(() => {
+  const option = TREND_METRIC_OPTIONS.find(
+    item => item.key === activeTrendMetric.value
+  );
+  return option?.label || 'Doanh thu';
+});
+
+const aiGrowthTotal = computed(() => {
+  if (activeTrendMetric.value === 'close_rate') {
+    return Number(aiGrowthSeries.value.at(-1)?.value || 0);
+  }
+  return (aiGrowthSeries.value || []).reduce((sum, point) => {
+    return sum + Number(point?.value || 0);
+  }, 0);
+});
+
+const aiGrowthLatestValue = computed(() => {
+  return Number(aiGrowthSeries.value.at(-1)?.value || 0);
+});
+
+const aiGrowthPreviousValue = computed(() => {
+  if ((aiGrowthSeries.value || []).length < 2) return 0;
+  return Number(aiGrowthSeries.value.at(-2)?.value || 0);
+});
+
+const aiGrowthDeltaPercent = computed(() => {
+  const latest = aiGrowthLatestValue.value;
+  const previous = aiGrowthPreviousValue.value;
+  if (!previous) return latest > 0 ? 100 : 0;
+  return Math.round(((latest - previous) / previous) * 100);
+});
+
+const aiGrowthDeltaTone = computed(() => {
+  if (aiGrowthDeltaPercent.value > 0) return 'text-n-teal-11';
+  if (aiGrowthDeltaPercent.value < 0) return 'text-n-ruby-11';
+  return 'text-n-slate-11';
+});
+
+const aiGrowthDeltaText = computed(() => {
+  const delta = aiGrowthDeltaPercent.value;
+  if (!delta) return 'Không đổi so với mốc trước';
+  const prefix = delta > 0 ? '+' : '';
+  return `${prefix}${delta}% so với mốc trước`;
+});
+
+const aiGrowthRangeClass = key => {
+  return aiGrowthRange.value === key
+    ? 'bg-n-blue-9 text-white shadow-sm'
+    : 'bg-n-slate-2 text-n-slate-11 hover:bg-n-slate-3';
+};
+
+const trendMetricClass = key => {
+  return activeTrendMetric.value === key
+    ? 'bg-n-slate-12 text-white shadow-sm'
+    : 'bg-n-slate-2 text-n-slate-11 hover:bg-n-slate-3';
+};
+
+const startOfUtcDayTimestamp = date => {
+  return Math.floor(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) /
+      1000
+  );
+};
+
+const getAiGrowthWindow = rangeKey => {
+  const option =
+    AI_GROWTH_RANGE_OPTIONS.find(item => item.key === rangeKey) ||
+    AI_GROWTH_RANGE_OPTIONS[1];
+  const endDate = new Date();
+  const until = startOfUtcDayTimestamp(endDate);
+  const since = until - option.days * 24 * 60 * 60;
+  return { since, until };
+};
+
+const formatBucketLabel = (timestamp, bucketType) => {
+  const date = new Date(Number(timestamp || 0) * 1000);
+  if (Number.isNaN(date.getTime())) return '';
+
+  if (bucketType === 'week') {
+    return date.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+    });
+  }
+
+  if (bucketType === 'month') {
+    return date.toLocaleDateString('vi-VN', {
+      month: '2-digit',
+      year: '2-digit',
+    });
+  }
+
+  return date.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+  });
+};
+
+const buildTrendBuckets = rangeKey => {
+  const { since, until } = getAiGrowthWindow(rangeKey);
+
+  if (rangeKey === '1m') {
+    const totalDays = Math.max(0, Math.floor((until - since) / 86400));
+    return Array.from({ length: totalDays + 1 }, (_, index) => {
+      const timestamp = since + index * 86400;
+      return {
+        bucketType: 'day',
+        since: timestamp,
+        until: timestamp,
+        timestamp,
+        label: formatBucketLabel(timestamp, 'day'),
+      };
+    });
+  }
+
+  if (rangeKey === '3m') {
+    const totalWeeks = Math.max(0, Math.ceil((until - since + 86400) / 604800));
+    return Array.from({ length: totalWeeks }, (_, index) => {
+      const bucketSince = since + index * 604800;
+      const bucketUntil = Math.min(until, bucketSince + 6 * 86400);
+      return {
+        bucketType: 'week',
+        since: bucketSince,
+        until: bucketUntil,
+        timestamp: bucketSince,
+        label: formatBucketLabel(bucketSince, 'week'),
+      };
+    });
+  }
+
+  const monthCount = rangeKey === '6m' ? 6 : 12;
+  const today = new Date();
+  return Array.from({ length: monthCount }, (_, index) => {
+    const monthDate = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - (monthCount - 1 - index), 1)
+    );
+    const bucketSince = startOfUtcDayTimestamp(monthDate);
+    const nextMonthDate = new Date(
+      Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1, 1)
+    );
+    const bucketUntil = Math.min(
+      until,
+      startOfUtcDayTimestamp(nextMonthDate) - 86400
+    );
+    return {
+      bucketType: 'month',
+      since: bucketSince,
+      until: Math.max(bucketSince, bucketUntil),
+      timestamp: bucketSince,
+      label: formatBucketLabel(bucketSince, 'month'),
+    };
+  }).filter(bucket => bucket.since <= until);
+};
+
+const buildBucketSeries = (buckets, valueGetter) => {
+  return buckets.map(bucket => ({
+    timestamp: bucket.timestamp,
+    label: bucket.label,
+    value: Number(valueGetter(bucket) || 0),
+  }));
+};
+
+const findCountInLabelSummary = (rows, labelName) => {
+  const normalized = normalizeLabelKey(labelName);
+  const row = (Array.isArray(rows) ? rows : []).find(item => {
+    return normalizeLabelKey(item?.name) === normalized;
+  });
+  return Number(row?.conversations_count || row?.conversationsCount || 0);
+};
+
+const formatTrendValueText = value => {
+  const numericValue = Number(value || 0);
+  if (activeTrendMetric.value === 'revenue') {
+    return `${numericValue.toLocaleString('vi-VN')} USD`;
+  }
+  if (activeTrendMetric.value === 'close_rate') {
+    return `${numericValue}%`;
+  }
+  return formatCount(numericValue);
+};
+
+const trendSummaryText = computed(() => {
+  if (activeTrendMetric.value === 'close_rate') {
+    return `Tỉ lệ chốt gần nhất trong ${aiGrowthRangeLabel.value}`;
+  }
+  return `Tổng ${activeTrendMetricLabel.value.toLowerCase()} trong ${aiGrowthRangeLabel.value}`;
+});
+
+const trendDeltaText = computed(() => {
+  if (activeTrendMetric.value === 'close_rate') {
+    return aiGrowthDeltaText.value.replace('%', ' điểm %');
+  }
+  return aiGrowthDeltaText.value;
+});
+
+const formatAiGrowthAxisLabel = timestamp => {
+  const date = new Date(Number(timestamp || 0) * 1000);
+  if (Number.isNaN(date.getTime())) return '';
+  const isLongRange =
+    aiGrowthRange.value === '6m' || aiGrowthRange.value === '1y';
+  return date.toLocaleDateString('vi-VN', {
+    day: isLongRange ? undefined : '2-digit',
+    month: '2-digit',
+    year: isLongRange ? '2-digit' : undefined,
+  });
+};
+
+const formatAiGrowthTooltipLabel = timestamp => {
+  const date = new Date(Number(timestamp || 0) * 1000);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+};
+
+const fetchAllPaymentReviewCasesForTrend = async () => {
+  const limit = 100;
+  let offset = 0;
+  let hasMore = true;
+  let rows = [];
+
+  while (hasMore && offset <= 1000) {
+    const response = await AiControlAPI.listPaymentReviewCases({
+      reviewStatus: 'payment_review_pending',
+      limit,
+      offset,
+    });
+    const data = response?.data || {};
+    const pageRows = Array.isArray(data?.cases) ? data.cases : [];
+    rows = rows.concat(pageRows);
+    hasMore = pageRows.length === limit;
+    offset += limit;
+  }
+
+  return rows;
+};
+
+const buildRevenueBucketSeries = (rows, rangeKey) => {
+  const buckets = buildTrendBuckets(rangeKey);
+  return buildBucketSeries(buckets, bucket => {
+    return (Array.isArray(rows) ? rows : []).reduce((sum, row) => {
+      const createdAt = String(row?.created_at || '').trim();
+      if (!createdAt) return sum;
+      const date = new Date(createdAt);
+      const timestamp = startOfUtcDayTimestamp(date);
+      if (Number.isNaN(date.getTime())) return sum;
+      if (timestamp < bucket.since || timestamp > bucket.until) return sum;
+      const amount = parseFloat(
+        row?.expected_amount_total || row?.expected_amount || 0
+      );
+      if (Number.isNaN(amount)) return sum;
+      return sum + amount;
+    }, 0);
+  });
+};
+
+const fetchLabelBucketSeries = async (labelName, rangeKey) => {
+  const buckets = buildTrendBuckets(rangeKey);
+  const responses = await Promise.all(
+    buckets.map(bucket =>
+      SummaryReportsAPI.getLabelReports({
+        since: bucket.since,
+        until: bucket.until,
+        businessHours: false,
+      })
+    )
+  );
+
+  return buildBucketSeries(buckets, bucket => {
+    const index = buckets.findIndex(item => item.timestamp === bucket.timestamp);
+    return findCountInLabelSummary(
+      responses[index]?.data || [],
+      labelName
+    );
+  });
+};
+
+const fetchCloseRateBucketSeries = async rangeKey => {
+  const buckets = buildTrendBuckets(rangeKey);
+  const [labelResponses, summaryResponses] = await Promise.all([
+    Promise.all(
+      buckets.map(bucket =>
+        SummaryReportsAPI.getLabelReports({
+          since: bucket.since,
+          until: bucket.until,
+          businessHours: false,
+        })
+      )
+    ),
+    Promise.all(
+      buckets.map(bucket =>
+        ReportsAPI.getSummary(
+          bucket.since,
+          bucket.until,
+          'account',
+          undefined,
+          undefined,
+          false
+        )
+      )
+    ),
+  ]);
+
+  return buildBucketSeries(buckets, bucket => {
+    const index = buckets.findIndex(item => item.timestamp === bucket.timestamp);
+    const closed = findCountInLabelSummary(
+      labelResponses[index]?.data || [],
+      BOOKING_CONFIRMED_LABEL
+    );
+    const total = Number(summaryResponses[index]?.data?.conversations_count || 0);
+    if (!total) return 0;
+    return Math.round((closed / total) * 1000) / 10;
+  });
+};
 
 const normalizeLabelSummary = summary => {
   if (!Array.isArray(summary)) return [];
@@ -823,6 +1154,56 @@ const fetchLabelSummary = async () => {
   labelSummary.value = normalizeLabelSummary(response?.data);
 };
 
+const fetchAiGrowthSeries = async (rangeKey = aiGrowthRange.value) => {
+  isAiGrowthLoading.value = true;
+  aiGrowthError.value = '';
+
+  try {
+    if (activeTrendMetric.value === 'revenue') {
+      const rows = await fetchAllPaymentReviewCasesForTrend();
+      aiGrowthSeries.value = buildRevenueBucketSeries(rows, rangeKey);
+      return;
+    }
+
+    if (activeTrendMetric.value === 'new_clients') {
+      aiGrowthSeries.value = await fetchLabelBucketSeries('khách_mới', rangeKey);
+      return;
+    }
+
+    if (activeTrendMetric.value === 'return_clients') {
+      aiGrowthSeries.value = await fetchLabelBucketSeries(
+        'khách_quay_lại',
+        rangeKey
+      );
+      return;
+    }
+
+    if (activeTrendMetric.value === 'close_rate') {
+      aiGrowthSeries.value = await fetchCloseRateBucketSeries(rangeKey);
+      return;
+    }
+
+    aiGrowthSeries.value = [];
+  } catch (error) {
+    aiGrowthSeries.value = [];
+    aiGrowthError.value = `Không tải được xu hướng ${activeTrendMetricLabel.value.toLowerCase()}.`;
+  } finally {
+    isAiGrowthLoading.value = false;
+  }
+};
+
+const selectAiGrowthRange = async rangeKey => {
+  if (!rangeKey || rangeKey === aiGrowthRange.value) return;
+  aiGrowthRange.value = rangeKey;
+  await fetchAiGrowthSeries(rangeKey);
+};
+
+const selectTrendMetric = async metricKey => {
+  if (!metricKey || metricKey === activeTrendMetric.value) return;
+  activeTrendMetric.value = metricKey;
+  await fetchAiGrowthSeries();
+};
+
 const isRiskConversation = conversation => {
   const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
   const normalizedLabels = labels.map(label => normalizeLabelKey(label));
@@ -1337,10 +1718,10 @@ const findLabelByTitle = labelTitle => {
 // ── Chart.js integration ──
 const chartJsLoaded = ref(false);
 const handoffChartRef = ref(null);
-const handoverBarChartRef = ref(null);
+const aiGrowthChartRef = ref(null);
 const labelPolarChartRef = ref(null);
 let handoffChartInstance = null;
-let handoverBarChartInstance = null;
+let aiGrowthChartInstance = null;
 let labelPolarChartInstance = null;
 
 const loadChartJs = () => {
@@ -1375,7 +1756,7 @@ const renderCharts = () => {
 
   // Cleanup old instances
   if (handoffChartInstance) { handoffChartInstance.destroy(); handoffChartInstance = null; }
-  if (handoverBarChartInstance) { handoverBarChartInstance.destroy(); handoverBarChartInstance = null; }
+  if (aiGrowthChartInstance) { aiGrowthChartInstance.destroy(); aiGrowthChartInstance = null; }
   if (labelPolarChartInstance) { labelPolarChartInstance.destroy(); labelPolarChartInstance = null; }
 
   // 1. AI Handoff Doughnut
@@ -1392,18 +1773,62 @@ const renderCharts = () => {
     });
   }
 
-  // 2. Handover Reasons Bar
-  const barEl = handoverBarChartRef.value;
-  if (barEl) {
-    const reasons = Array.isArray(topHandoverReasons.value) ? topHandoverReasons.value : [];
-    const barColors = ['rgba(59,130,246,0.8)','rgba(168,85,247,0.8)','rgba(245,158,11,0.8)','rgba(16,185,129,0.8)','rgba(239,68,68,0.8)'];
-    handoverBarChartInstance = new Chart(barEl, {
-      type: 'bar',
+  // 2. AI Growth Line
+  const growthEl = aiGrowthChartRef.value;
+  if (growthEl) {
+    const points = Array.isArray(aiGrowthSeries.value) ? aiGrowthSeries.value : [];
+    aiGrowthChartInstance = new Chart(growthEl, {
+      type: 'line',
       data: {
-        labels: reasons.map(r => toTitleCase(handoverReasonDisplay(r.name))),
-        datasets: [{ label: 'Số lượng', data: reasons.map(r => r.conversationsCount || 0), backgroundColor: reasons.map((_, i) => barColors[i % barColors.length]), borderRadius: 6, borderSkipped: false }]
+        labels: points.map(point => point.label || formatAiGrowthAxisLabel(point.timestamp)),
+        datasets: [{
+          label: activeTrendMetricLabel.value,
+          data: points.map(point => point.value || 0),
+          borderColor: 'rgba(37,99,235,0.95)',
+          backgroundColor: 'rgba(59,130,246,0.14)',
+          fill: true,
+          tension: 0.35,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          pointHoverBackgroundColor: 'rgba(37,99,235,1)',
+          pointHoverBorderColor: '#ffffff',
+          pointHoverBorderWidth: 2,
+        }]
       },
-      options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(0,0,0,0.06)' }, ticks: { color: '#64748b' } }, y: { grid: { display: false }, ticks: { color: '#334155', font: { size: 11 } } } } }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: items => {
+                const point = points[items?.[0]?.dataIndex || 0];
+                return point?.label || formatAiGrowthTooltipLabel(point?.timestamp);
+              },
+              label: item => ` ${formatTrendValueText(item.raw || 0)}`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: {
+              color: '#64748b',
+              maxTicksLimit: aiGrowthRange.value === '1y' ? 6 : 8,
+            },
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: 'rgba(0,0,0,0.06)' },
+            ticks: {
+              color: '#64748b',
+              callback: value => formatTrendValueText(value),
+            },
+          },
+        },
+      }
     });
   }
 
@@ -1612,6 +2037,7 @@ const commentTimeAgo = (iso) => {
 watch(activeMainTab, async (tab) => {
   if (tab === 'reporting') {
     await loadChartJs();
+    await fetchAiGrowthSeries();
     await nextTick();
     renderCharts();
   }
@@ -1624,7 +2050,7 @@ watch(activeMainTab, async (tab) => {
   }
 });
 
-watch([trackedLabelRows, topHandoverReasons], () => {
+watch([trackedLabelRows, aiGrowthSeries], () => {
   if (activeMainTab.value === 'reporting') {
     nextTick(() => renderCharts());
   }
@@ -2627,12 +3053,67 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm p-6">
-                <div class="text-sm font-semibold text-n-slate-12 mb-4 flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-n-blue-9 inline-block"></span>
-                  Top lý do chuyển nhân viên
+                <div class="flex flex-col gap-4 mb-4">
+                  <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div class="text-sm font-semibold text-n-slate-12 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-n-blue-9 inline-block"></span>
+                        {{ activeTrendMetricLabel }}
+                      </div>
+                      <div class="mt-1 text-2xl font-bold text-n-slate-12">
+                        {{ formatTrendValueText(aiGrowthTotal) }}
+                      </div>
+                      <div class="mt-1 text-[11px] text-n-slate-11">
+                        {{ trendSummaryText }}
+                      </div>
+                      <div class="mt-2 text-[11px] font-medium" :class="aiGrowthDeltaTone">
+                        {{ trendDeltaText }}
+                      </div>
+                    </div>
+
+                    <div class="flex flex-col items-start gap-2 md:items-end">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <button
+                          v-for="option in TREND_METRIC_OPTIONS"
+                          :key="option.key"
+                          type="button"
+                          :data-test-id="`trend-metric-${option.key}`"
+                          class="rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors"
+                          :class="trendMetricClass(option.key)"
+                          @click="selectTrendMetric(option.key)"
+                        >
+                          {{ option.label }}
+                        </button>
+                      </div>
+
+                      <div class="flex items-center gap-2 flex-wrap">
+                      <button
+                        v-for="option in AI_GROWTH_RANGE_OPTIONS"
+                        :key="option.key"
+                        type="button"
+                        :data-test-id="`ai-growth-range-${option.key}`"
+                        class="rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors"
+                        :class="aiGrowthRangeClass(option.key)"
+                        @click="selectAiGrowthRange(option.key)"
+                      >
+                        {{ option.label }}
+                      </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-if="aiGrowthError" class="rounded-xl bg-n-ruby-2 px-3 py-2 text-xs text-n-ruby-11">
+                    {{ aiGrowthError }}
+                  </div>
                 </div>
                 <div class="relative h-64">
-                  <canvas ref="handoverBarChartRef"></canvas>
+                  <div
+                    v-if="isAiGrowthLoading"
+                    class="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-n-solid-1/70 text-xs font-medium text-n-slate-11 backdrop-blur-sm"
+                  >
+                    Đang tải dữ liệu xu hướng...
+                  </div>
+                  <canvas ref="aiGrowthChartRef"></canvas>
                 </div>
               </div>
             </div>

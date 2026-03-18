@@ -29,6 +29,7 @@ vi.mock('vue-router', async () => {
 
 vi.mock('dashboard/api/reports', () => ({
   default: {
+    getReports: vi.fn(),
     getSummary: vi.fn(),
     getBotMetrics: vi.fn(),
   },
@@ -67,10 +68,10 @@ vi.mock('shared/helpers/mitt', () => ({
   },
 }));
 
-const createWrapper = () => {
+const createWrapper = ({ labels = [] } = {}) => {
   const store = createStore({
     getters: {
-      'labels/getLabels': () => [],
+      'labels/getLabels': () => labels,
       'inboxes/getInboxes': () => [],
     },
     actions: {},
@@ -119,9 +120,12 @@ const createWrapper = () => {
 describe('AiControlPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.Chart = vi.fn();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-18T00:00:00Z'));
+    window.Chart = vi.fn(() => ({ destroy: vi.fn() }));
     Element.prototype.scrollIntoView = vi.fn();
 
+    ReportsAPI.getReports.mockResolvedValue([]);
     ReportsAPI.getSummary.mockResolvedValue({ data: {} });
     ReportsAPI.getBotMetrics.mockResolvedValue({
       data: { conversation_count: 0, message_count: 0 },
@@ -168,6 +172,10 @@ describe('AiControlPanel', () => {
       data: { blocked_inbox_ids: [] },
     });
     AiControlAPI.getManagerCustomer360.mockResolvedValue({ data: null });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('opens a label popup instead of navigating away from the current page', async () => {
@@ -219,6 +227,71 @@ describe('AiControlPanel', () => {
     expect(String(wrapper.vm.aiControlConversationId)).toBe('101');
     expect(wrapper.find('[data-test-id="conversation-view"]').text()).toContain(
       '101'
+    );
+  });
+
+  it('loads the reporting chart with metric tabs inside the previous AI trend card', async () => {
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-reporting"]').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Doanh thu');
+    expect(wrapper.text()).toContain('Khách mới');
+    expect(wrapper.text()).toContain('Tỉ lệ chốt');
+    expect(wrapper.text()).toContain('Khách quay lại');
+    expect(window.Chart).toHaveBeenCalled();
+  });
+
+  it('switches the reporting chart to the new clients metric', async () => {
+    SummaryReportsAPI.getLabelReports.mockResolvedValue({ data: [] });
+
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-reporting"]').trigger('click');
+    await flushPromises();
+    SummaryReportsAPI.getLabelReports.mockClear();
+
+    await wrapper.find('[data-test-id="trend-metric-new_clients"]').trigger('click');
+    await flushPromises();
+
+    expect(SummaryReportsAPI.getLabelReports).toHaveBeenNthCalledWith(1, {
+      since: 1766016000,
+      until: 1766534400,
+      businessHours: false,
+    });
+  });
+
+  it('updates the close rate chart range when selecting a different stock-style window', async () => {
+    SummaryReportsAPI.getLabelReports.mockResolvedValue({ data: [] });
+    ReportsAPI.getSummary.mockResolvedValue({ data: { conversations_count: 0 } });
+
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-reporting"]').trigger('click');
+    await flushPromises();
+
+    await wrapper.find('[data-test-id="trend-metric-close_rate"]').trigger('click');
+    await flushPromises();
+    SummaryReportsAPI.getLabelReports.mockClear();
+    ReportsAPI.getSummary.mockClear();
+
+    await wrapper.find('[data-test-id="ai-growth-range-1y"]').trigger('click');
+    await flushPromises();
+
+    expect(SummaryReportsAPI.getLabelReports).toHaveBeenNthCalledWith(1, {
+      since: 1743465600,
+      until: 1745971200,
+      businessHours: false,
+    });
+    expect(ReportsAPI.getSummary).toHaveBeenNthCalledWith(
+      1,
+      1743465600,
+      1745971200,
+      'account',
+      undefined,
+      undefined,
+      false
     );
   });
 });
