@@ -7,6 +7,7 @@ import {
   getSortedAgentsByAvailability,
   getAgentsByUpdatedPresence,
 } from 'dashboard/helper/agentHelper.js';
+import { openCommandBar } from 'dashboard/helper/commandbar/openCommandBar';
 import MenuItem from './menuItem.vue';
 import MenuItemWithSubmenu from './menuItemWithSubmenu.vue';
 import wootConstants from 'dashboard/constants/globals';
@@ -225,8 +226,7 @@ export default {
     },
     async snoozeConversation() {
       await this.$store.dispatch('setContextMenuChatId', this.chatId);
-      const ninja = document.querySelector('ninja-keys');
-      ninja.open({ parent: 'snooze_conversation' });
+      openCommandBar({ parent: 'snooze_conversation' });
     },
     assignPriority(priority) {
       this.$emit('assignPriority', priority);

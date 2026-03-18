@@ -14,6 +14,7 @@ import {
   CMD_REOPEN_CONVERSATION,
   CMD_RESOLVE_CONVERSATION,
 } from 'dashboard/helper/commandbar/events';
+import { openCommandBar } from 'dashboard/helper/commandbar/openCommandBar';
 
 import ButtonGroup from 'dashboard/components-next/buttonGroup/ButtonGroup.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -73,8 +74,7 @@ const getConversationParams = () => {
 };
 
 const openSnoozeModal = () => {
-  const ninja = document.querySelector('ninja-keys');
-  ninja.open({ parent: 'snooze_conversation' });
+  openCommandBar({ parent: 'snooze_conversation' });
 };
 
 const toggleStatus = (status, snoozedUntil) => {

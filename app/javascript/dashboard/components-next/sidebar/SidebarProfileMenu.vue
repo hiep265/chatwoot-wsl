@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import Avatar from 'next/avatar/Avatar.vue';
 import SidebarProfileMenuStatus from './SidebarProfileMenuStatus.vue';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import { openCommandBar } from 'dashboard/helper/commandbar/openCommandBar';
 
 import {
   DropdownContainer,
@@ -73,8 +74,7 @@ const menuItems = computed(() => {
       label: t('SIDEBAR_ITEMS.APPEARANCE'),
       icon: 'i-lucide-palette',
       click: () => {
-        const ninja = document.querySelector('ninja-keys');
-        ninja.open({ parent: 'appearance_settings' });
+        openCommandBar({ parent: 'appearance_settings' });
       },
     },
     {

@@ -24,6 +24,7 @@ import AudioRecorder from 'dashboard/components/widgets/WootWriter/AudioRecorder
 import { AUDIO_FORMATS } from 'shared/constants/messages';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { CMD_AI_ASSIST } from 'dashboard/helper/commandbar/events';
+import { openCommandBar } from 'dashboard/helper/commandbar/openCommandBar';
 import {
   getMessageVariables,
   getUndefinedVariablesInMessage,
@@ -615,8 +616,7 @@ export default {
         '$mod+KeyK': {
           action: e => {
             e.preventDefault();
-            const ninja = document.querySelector('ninja-keys');
-            ninja.open();
+            openCommandBar();
           },
           allowOnFocusedInput: true,
         },

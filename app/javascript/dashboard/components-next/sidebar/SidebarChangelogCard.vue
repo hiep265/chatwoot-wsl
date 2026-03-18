@@ -1,8 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import GroupedStackedChangelogCard from 'dashboard/components-next/changelog-card/GroupedStackedChangelogCard.vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import changelogAPI from 'dashboard/api/changelog';
+import { scheduleAfterFirstPaint } from 'dashboard/helper/bootstrapHelper';
 
 const MAX_DISMISSED_SLUGS = 5;
 
@@ -11,6 +12,7 @@ const posts = ref([]);
 const currentIndex = ref(0);
 const dismissingCards = ref([]);
 const isLoading = ref(false);
+let cancelChangelogFetch = null;
 
 // Get current dismissed slugs from ui_settings
 const dismissedSlugs = computed(() => {
@@ -91,7 +93,14 @@ const handleImgClick = ({ index }) => {
 };
 
 onMounted(() => {
-  fetchChangelog();
+  cancelChangelogFetch = scheduleAfterFirstPaint(() => {
+    fetchChangelog();
+    cancelChangelogFetch = null;
+  });
+});
+
+onUnmounted(() => {
+  cancelChangelogFetch?.();
 });
 </script>
 

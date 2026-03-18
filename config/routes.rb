@@ -12,7 +12,7 @@ Rails.application.routes.draw do
   if ActiveModel::Type::Boolean.new.cast(ENV.fetch('CW_API_ONLY_SERVER', false))
     root to: 'api#index'
   else
-    root to: 'dashboard#index'
+    root to: redirect('/simple', status: 302)
 
     get '/simple', to: 'dashboard#index'
     get '/simple/*params', to: 'dashboard#index'

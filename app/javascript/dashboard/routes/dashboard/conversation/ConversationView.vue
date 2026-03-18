@@ -10,6 +10,7 @@ import CmdBarConversationSnooze from 'dashboard/routes/dashboard/commands/CmdBar
 import { emitter } from 'shared/helpers/mitt';
 import SidepanelSwitch from 'dashboard/components-next/Conversation/SidepanelSwitch.vue';
 import ConversationSidebar from 'dashboard/components/widgets/conversation/ConversationSidebar.vue';
+import { scheduleAfterFirstPaint } from 'dashboard/helper/bootstrapHelper';
 
 export default {
   components: {
@@ -66,6 +67,7 @@ export default {
   data() {
     return {
       showSearchModal: false,
+      cancelBootstrapPreload: null,
     };
   },
   computed: {
@@ -114,13 +116,20 @@ export default {
   },
 
   mounted() {
-    this.$store.dispatch('agents/get');
-    this.$store.dispatch('portals/index');
+    this.cancelBootstrapPreload = scheduleAfterFirstPaint(() => {
+      this.$store.dispatch('agents/get');
+      this.$store.dispatch('portals/index');
+      this.cancelBootstrapPreload = null;
+    });
     this.initialize();
     this.$watch('$store.state.route', () => this.initialize());
     this.$watch('chatList.length', () => {
       this.setActiveChat();
     });
+  },
+
+  unmounted() {
+    this.cancelBootstrapPreload?.();
   },
 
   methods: {

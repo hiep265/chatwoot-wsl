@@ -12,6 +12,8 @@ import { useConversationHotKeys } from 'dashboard/composables/commands/useConver
 import wootConstants from 'dashboard/constants/globals';
 import { GENERAL_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 
+const emit = defineEmits(['ready']);
+
 const store = useStore();
 const { t } = useI18n();
 
@@ -78,7 +80,10 @@ watchEffect(() => {
   }
 });
 
-onMounted(setCommandBarData);
+onMounted(() => {
+  setCommandBarData();
+  emit('ready');
+});
 </script>
 
 <!-- eslint-disable vue/attribute-hyphenation -->

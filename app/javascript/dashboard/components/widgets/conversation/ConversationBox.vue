@@ -4,6 +4,7 @@ import ConversationHeader from './ConversationHeader.vue';
 import DashboardAppFrame from '../DashboardApp/Frame.vue';
 import EmptyState from './EmptyState/EmptyState.vue';
 import MessagesView from './MessagesView.vue';
+import { scheduleAfterFirstPaint } from 'dashboard/helper/bootstrapHelper';
 
 export default {
   components: {
@@ -32,7 +33,10 @@ export default {
     },
   },
   data() {
-    return { activeIndex: 0 };
+    return {
+      activeIndex: 0,
+      cancelDashboardAppsPreload: null,
+    };
   },
   computed: {
     ...mapGetters({
@@ -69,11 +73,15 @@ export default {
     'currentChat.id'() {
       this.fetchLabels();
       this.activeIndex = 0;
+      this.preloadDashboardApps();
     },
   },
   mounted() {
     this.fetchLabels();
-    this.$store.dispatch('dashboardApps/get');
+    this.preloadDashboardApps();
+  },
+  unmounted() {
+    this.cancelDashboardAppsPreload?.();
   },
   methods: {
     fetchLabels() {
@@ -81,6 +89,20 @@ export default {
         return;
       }
       this.$store.dispatch('conversationLabels/get', this.currentChat.id);
+    },
+    preloadDashboardApps() {
+      if (
+        !this.currentChat.id ||
+        this.dashboardApps.length ||
+        this.cancelDashboardAppsPreload
+      ) {
+        return;
+      }
+
+      this.cancelDashboardAppsPreload = scheduleAfterFirstPaint(() => {
+        this.$store.dispatch('dashboardApps/get');
+        this.cancelDashboardAppsPreload = null;
+      });
     },
     onDashboardAppTabChange(index) {
       this.activeIndex = index;
