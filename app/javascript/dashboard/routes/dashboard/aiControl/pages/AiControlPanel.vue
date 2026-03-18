@@ -35,6 +35,7 @@ const store = useStore();
 
 const from = ref(0);
 const to = ref(0);
+const localAiControlConversationId = ref(0);
 
 const activeMainTab = ref('operations');
 const reportingDashboardUrl = ref('https://app.powerbi.com/view?r=custom_id_from_user');
@@ -149,9 +150,17 @@ const isRiskBannerVisible = ref(false);
 const isRiskBannerBlinking = ref(false);
 const riskBannerText = ref('');
 const riskAudio = ref(null);
+const showReportLabelPopup = ref(false);
+const selectedReportLabel = ref('');
+const reportLabelPreviewItems = ref([]);
+const isReportLabelPreviewLoading = ref(false);
+const reportLabelPreviewError = ref('');
 
 const aiControlConversationId = computed(
-  () => route.params.conversation_id || 0
+  () =>
+    String(localAiControlConversationId.value || '').trim() ||
+    route.params.conversation_id ||
+    0
 );
 const adminPanelRoute = computed(() => {
   return {
@@ -173,6 +182,14 @@ const isDeletingLabel = ref(false);
 
 const formatCount = value => {
   return Number(value || 0).toLocaleString();
+};
+
+const labelTestId = name => {
+  return normalizeLabelKey(name)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
 };
 
 const labelOverviewTotal = computed(() => {
@@ -654,16 +671,6 @@ const kpiTabClass = key => {
     : 'outline-n-container hover:outline-n-slate-10';
 };
 
-const labelRoute = label => {
-  return {
-    name: 'label_conversations',
-    params: {
-      accountId: route.params.accountId,
-      label: normalizeLabelKey(label),
-    },
-  };
-};
-
 const isConversationInHumanMode = conversation => {
   // Chỉ dùng ai_handoff để đánh dấu chế độ human
   const labels = Array.isArray(conversation?.labels) ? conversation.labels : [];
@@ -1017,21 +1024,150 @@ const scrollToConversationSection = async () => {
   });
 };
 
-const openAiControlConversation = async conversationId => {
+const conversationPreviewName = conversation => {
+  const sender = conversation?.meta?.sender;
+  const candidates = [
+    sender?.name,
+    sender?.available_name,
+    conversation?.contact?.name,
+    conversation?.meta?.name,
+  ];
+  const match = candidates.find(value => String(value || '').trim());
+  return String(match || `Khách #${conversation?.id || '--'}`).trim();
+};
+
+const conversationPreviewAvatar = conversation => {
+  const sender = conversation?.meta?.sender;
+  const candidates = [
+    sender?.thumbnail,
+    sender?.avatar_url,
+    conversation?.contact?.thumbnail,
+    conversation?.contact?.avatar_url,
+  ];
+  const match = candidates.find(value => String(value || '').trim());
+  return String(match || '').trim();
+};
+
+const conversationStatusText = status => {
+  const normalized = String(status || '').toLowerCase().trim();
+  if (normalized === 'open') return 'Đang mở';
+  if (normalized === 'pending') return 'Đang chờ';
+  if (normalized === 'resolved') return 'Đã xử lý';
+  if (normalized === 'snoozed') return 'Đang tạm dừng';
+  return '';
+};
+
+const conversationPreviewSubtext = conversation => {
+  const parts = [];
+  const displayId = String(
+    conversation?.display_id || conversation?.meta?.display_id || ''
+  ).trim();
+  const statusText = conversationStatusText(conversation?.status);
+
+  if (displayId) parts.push(`#${displayId}`);
+  if (statusText) parts.push(statusText);
+
+  return parts.join(' · ') || 'Nhấn để mở phần tin nhắn';
+};
+
+const conversationPreviewSnippet = conversation => {
+  const candidates = [
+    conversation?.last_non_activity_message?.content,
+    conversation?.meta?.last_message?.content,
+    conversation?.last_activity_message?.content,
+    conversation?.meta?.sender?.phone_number,
+  ];
+  const match = candidates.find(value => String(value || '').trim());
+  return String(match || 'Nhấn để mở phần tin nhắn').trim();
+};
+
+const normalizeConversationPreviewItem = conversation => {
+  const id = String(conversation?.id || '').trim();
+  if (!id) return null;
+
+  return {
+    id,
+    avatarUrl: conversationPreviewAvatar(conversation),
+    name: conversationPreviewName(conversation),
+    subtext: conversationPreviewSubtext(conversation),
+    snippet: conversationPreviewSnippet(conversation),
+  };
+};
+
+const closeReportLabelPopup = () => {
+  showReportLabelPopup.value = false;
+  selectedReportLabel.value = '';
+  reportLabelPreviewItems.value = [];
+  reportLabelPreviewError.value = '';
+  isReportLabelPreviewLoading.value = false;
+};
+
+const openReportLabelPopup = async label => {
+  const normalizedLabel = normalizeLabelKey(label);
+  if (!normalizedLabel) return;
+
+  selectedReportLabel.value = normalizedLabel;
+  reportLabelPreviewItems.value = [];
+  reportLabelPreviewError.value = '';
+  showReportLabelPopup.value = true;
+  isReportLabelPreviewLoading.value = true;
+
+  try {
+    const response = await InboxConversationAPI.get({
+      status: 'all',
+      assigneeType: 'all',
+      sortBy: 'last_activity_at_desc',
+      page: 1,
+      labels: [normalizedLabel],
+    });
+    const payload = response?.data?.data?.payload;
+    const rows = Array.isArray(payload) ? payload : [];
+    reportLabelPreviewItems.value = rows
+      .map(normalizeConversationPreviewItem)
+      .filter(Boolean);
+  } catch (error) {
+    reportLabelPreviewError.value =
+      error?.response?.data?.error ||
+      error?.response?.data?.detail?.error ||
+      'Không tải được danh sách hội thoại theo nhãn.';
+    useAlert(reportLabelPreviewError.value);
+  } finally {
+    isReportLabelPreviewLoading.value = false;
+  }
+};
+
+const openAiControlConversation = async (
+  conversationId,
+  { preserveRoute = false } = {}
+) => {
   const normalizedId = String(conversationId || '').trim();
   if (!normalizedId) return;
 
-  await router.push({
-    name: props.standalone
-      ? 'ai_control_simple_conversation'
-      : 'ai_control_panel_conversation',
-    params: {
-      accountId: route.params.accountId,
-      conversation_id: normalizedId,
-    },
-  });
+  activeMainTab.value = 'operations';
+
+  if (preserveRoute) {
+    localAiControlConversationId.value = normalizedId;
+  } else {
+    localAiControlConversationId.value = 0;
+    await router.push({
+      name: props.standalone
+        ? 'ai_control_simple_conversation'
+        : 'ai_control_panel_conversation',
+      params: {
+        accountId: route.params.accountId,
+        conversation_id: normalizedId,
+      },
+    });
+  }
 
   await scrollToConversationSection();
+};
+
+const openReportLabelConversation = async item => {
+  const normalizedId = String(item?.id || '').trim();
+  if (!normalizedId) return;
+  closeReportLabelPopup();
+  await openAiControlConversation(normalizedId, { preserveRoute: true });
 };
 
 const fetchManagerQueues = async () => {
@@ -1548,6 +1684,7 @@ onBeforeUnmount(() => {
             class="inline-flex items-center rounded-xl bg-n-solid-2 p-1 border border-n-slate-3 shadow-sm"
           >
             <button
+              data-test-id="ai-control-tab-operations"
               class="flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold transition-all duration-200"
               :class="
                 activeMainTab === 'operations'
@@ -1560,6 +1697,7 @@ onBeforeUnmount(() => {
               <span>Vận hành Hệ thống</span>
             </button>
             <button
+              data-test-id="ai-control-tab-reporting"
               class="flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold transition-all duration-200"
               :class="
                 activeMainTab === 'reporting'
@@ -1572,6 +1710,7 @@ onBeforeUnmount(() => {
               <span>Báo cáo</span>
             </button>
             <button
+              data-test-id="ai-control-tab-comment"
               class="flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold transition-all duration-200"
               :class="
                 activeMainTab === 'comment'
@@ -2427,41 +2566,49 @@ onBeforeUnmount(() => {
                 <div class="mt-2 text-[10px] text-n-amber-11/70">{{ paymentReviewTotal }} ca thanh toán →</div>
               </div>
 
-              <router-link
+              <button
+                type="button"
+                :data-test-id="`report-label-trigger-${labelTestId('khách_mới')}`"
                 class="rounded-2xl outline outline-1 outline-n-blue-4 bg-gradient-to-br from-n-blue-2 to-n-blue-3 shadow-sm p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
-                :to="labelRoute('khách_mới')"
+                @click="openReportLabelPopup('khách_mới')"
               >
                 <div class="text-[10px] font-bold uppercase tracking-wider text-n-blue-11">Khách mới</div>
                 <div class="mt-1 text-2xl font-bold text-n-blue-12">{{ newClientsCount.toLocaleString() }}</div>
                 <div class="mt-2 text-[10px] text-n-blue-11/70">Nhãn #khách_mới →</div>
-              </router-link>
+              </button>
 
-              <router-link
+              <button
+                type="button"
+                :data-test-id="`report-label-trigger-${labelTestId('ý_định_đặt_lịch_xác_nhận')}`"
                 class="rounded-2xl outline outline-1 outline-n-teal-4 bg-gradient-to-br from-n-teal-2 to-n-teal-3 shadow-sm p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
-                :to="labelRoute('ý_định_đặt_lịch_xác_nhận')"
+                @click="openReportLabelPopup('ý_định_đặt_lịch_xác_nhận')"
               >
                 <div class="text-[10px] font-bold uppercase tracking-wider text-n-teal-11">Tỉ lệ chốt (Close Rate)</div>
                 <div class="mt-1 text-2xl font-bold text-n-teal-12">{{ closeRateText }}</div>
                 <div class="mt-2 text-[10px] text-n-teal-11/70">{{ closeCount }} ca chốt thành công →</div>
-              </router-link>
+              </button>
 
-              <router-link
+              <button
+                type="button"
+                :data-test-id="`report-label-trigger-${labelTestId('khách_quay_lại')}`"
                 class="rounded-2xl outline outline-1 outline-n-violet-4 bg-gradient-to-br from-n-violet-2 to-n-violet-3 shadow-sm p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
-                :to="labelRoute('khách_quay_lại')"
+                @click="openReportLabelPopup('khách_quay_lại')"
               >
                 <div class="text-[10px] font-bold uppercase tracking-wider text-n-violet-11">Khách quay lại</div>
                 <div class="mt-1 text-2xl font-bold text-n-violet-12">{{ returnClientsCount.toLocaleString() }}</div>
                 <div class="mt-2 text-[10px] text-n-violet-11/70">Nhãn #khách_quay_lại →</div>
-              </router-link>
+              </button>
 
-              <router-link
+              <button
+                type="button"
+                :data-test-id="`report-label-trigger-${labelTestId('cần_theo_dõi')}`"
                 class="rounded-2xl outline outline-1 outline-n-ruby-4 bg-gradient-to-br from-n-ruby-2 to-n-ruby-3 shadow-sm p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
-                :to="labelRoute('cần_theo_dõi')"
+                @click="openReportLabelPopup('cần_theo_dõi')"
               >
                 <div class="text-[10px] font-bold uppercase tracking-wider text-n-ruby-11">Khách cần dặn / Nhắc lịch</div>
                 <div class="mt-1 text-2xl font-bold text-n-ruby-12">{{ followUpCount.toLocaleString() }}</div>
                 <div class="mt-2 text-[10px] text-n-ruby-11/70">Nhãn #cần_theo_dõi →</div>
-              </router-link>
+              </button>
             </div>
 
             <!-- Charts -->
@@ -2533,9 +2680,11 @@ onBeforeUnmount(() => {
                     :key="row.name"
                     class="flex items-center justify-between rounded-xl outline outline-1 outline-n-slate-3 bg-n-solid-2 px-4 py-3 transition-all hover:bg-n-slate-3 hover:outline-n-blue-4 group cursor-pointer"
                   >
-                    <router-link
+                    <button
+                      type="button"
+                      :data-test-id="`report-label-trigger-${labelTestId(row.name)}`"
                       class="flex flex-col gap-1 min-w-0 flex-1"
-                      :to="labelRoute(row.name)"
+                      @click="openReportLabelPopup(row.name)"
                     >
                       <div class="text-xs font-semibold text-n-slate-12 group-hover:text-n-blue-11 transition-colors truncate">
                         {{ labelDisplayName(row.name) }}
@@ -2558,7 +2707,7 @@ onBeforeUnmount(() => {
                           {{ labelPercent(row) }}%
                         </div>
                       </div>
-                    </router-link>
+                    </button>
                     <div class="flex items-center gap-2 ml-3">
                       <div class="text-sm font-bold text-n-slate-11 bg-n-slate-3 px-2.5 py-1 rounded-lg">
                         {{ row.conversationsCount.toLocaleString() }}
@@ -2820,6 +2969,80 @@ onBeforeUnmount(() => {
     <!-- Add Label Modal -->
     <woot-modal v-model:show="showAddLabelPopup" :on-close="closeAddLabelPopup">
       <AddLabel @close="closeAddLabelPopup" />
+    </woot-modal>
+
+    <woot-modal v-model:show="showReportLabelPopup" :on-close="closeReportLabelPopup">
+      <div class="w-[40rem] max-w-[calc(100vw-2rem)] p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="text-lg font-semibold text-n-slate-12">
+              {{ toTitleCase(labelDisplayName(selectedReportLabel)) || 'Chi tiết nhãn' }}
+            </div>
+            <div class="mt-1 text-sm text-n-slate-11">
+              Chọn khách để mở phần tin nhắn ngay trong trang AI Control.
+            </div>
+          </div>
+          <Button
+            color="slate"
+            size="sm"
+            label="Đóng"
+            @click="closeReportLabelPopup"
+          />
+        </div>
+
+        <div class="mt-5">
+          <div
+            v-if="isReportLabelPreviewLoading"
+            class="flex items-center justify-center rounded-2xl border border-n-slate-3 bg-n-solid-2 px-4 py-10 text-sm text-n-slate-11"
+          >
+            <div class="w-4 h-4 rounded-full border-2 border-n-blue-9 border-t-transparent animate-spin"></div>
+            <span class="ml-2">Đang tải danh sách khách...</span>
+          </div>
+
+          <div
+            v-else-if="reportLabelPreviewError"
+            class="rounded-2xl border border-n-ruby-4 bg-n-ruby-2 px-4 py-4 text-sm font-medium text-n-ruby-11"
+          >
+            {{ reportLabelPreviewError }}
+          </div>
+
+          <div
+            v-else-if="!reportLabelPreviewItems.length"
+            class="rounded-2xl border border-dashed border-n-slate-4 px-4 py-10 text-center text-sm text-n-slate-11"
+          >
+            Chưa có hội thoại nào cho nhãn này.
+          </div>
+
+          <div v-else class="flex max-h-[28rem] flex-col gap-3 overflow-y-auto pr-1">
+            <button
+              v-for="item in reportLabelPreviewItems"
+              :key="`report-label-conversation-${item.id}`"
+              type="button"
+              :data-test-id="`report-label-conversation-${item.id}`"
+              class="flex items-start gap-3 rounded-2xl border border-n-slate-3 bg-n-solid-1 px-4 py-3 text-left transition-all hover:border-n-blue-4 hover:bg-n-blue-2/30"
+              @click="openReportLabelConversation(item)"
+            >
+              <Avatar
+                :name="item.name"
+                :src="item.avatarUrl"
+                :size="40"
+                rounded-full
+              />
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm font-semibold text-n-slate-12">
+                  {{ item.name }}
+                </div>
+                <div class="mt-1 text-xs text-n-slate-11">
+                  {{ item.subtext }}
+                </div>
+                <div class="mt-2 text-sm text-n-slate-11 line-clamp-2">
+                  {{ item.snippet }}
+                </div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
     </woot-modal>
 
     <!-- Delete Label Confirmation Modal -->
