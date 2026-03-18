@@ -445,8 +445,8 @@ const paymentTotalAmountSum = computed(() => {
 
 const paymentTotalAmountText = computed(() => {
   const val = paymentTotalAmountSum.value;
-  if (!val) return '0 ₫';
-  return val.toLocaleString('vi-VN') + ' ₫';
+  if (!val) return '0 USD';
+  return val.toLocaleString('vi-VN') + ' USD';
 });
 
 const paymentItemCountText = item => {
