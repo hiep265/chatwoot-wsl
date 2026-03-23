@@ -52,6 +52,107 @@ describe Facebook::SendOnFacebookService do
         expect(bot).to have_received(:deliver)
       end
 
+      it 'uses the standard lane without message tags for aftercare messages inside 24 hours' do
+        enrollment = create(
+          :aftercare_enrollment,
+          account: account,
+          conversation: conversation,
+          contact: contact,
+          inbox: facebook_inbox,
+          created_by: create(:user, account: account, role: :administrator),
+          status: :active
+        )
+        subscription = create(
+          :aftercare_opt_in_subscription,
+          aftercare_enrollment: enrollment,
+          status: :subscribed,
+          provider: 'meta',
+          capability_status: 'supported',
+          token_ref: 'meta-token'
+        )
+        message = create(
+          :message,
+          message_type: 'outgoing',
+          inbox: facebook_inbox,
+          account: account,
+          conversation: conversation,
+          content: 'Follow-up trong 24h',
+          content_attributes: {
+            is_bot_generated: true,
+            aftercare_delivery_lane: 'standard',
+            aftercare_opt_in_subscription_id: subscription.id
+          }
+        )
+
+        described_class.new(message: message).perform
+
+        expect(bot).to have_received(:deliver).with({
+                                                      recipient: { id: contact_inbox.source_id },
+                                                      message: { text: 'Follow-up trong 24h' }
+                                                    }, { page_id: facebook_channel.page_id })
+      end
+
+      it 'uses notification_messages_token for aftercare messages outside 24 hours' do
+        enrollment = create(
+          :aftercare_enrollment,
+          account: account,
+          conversation: conversation,
+          contact: contact,
+          inbox: facebook_inbox,
+          created_by: create(:user, account: account, role: :administrator),
+          status: :active
+        )
+        subscription = create(
+          :aftercare_opt_in_subscription,
+          aftercare_enrollment: enrollment,
+          status: :subscribed,
+          provider: 'meta',
+          capability_status: 'supported',
+          token_ref: 'meta-notification-token'
+        )
+        message = create(
+          :message,
+          message_type: 'outgoing',
+          inbox: facebook_inbox,
+          account: account,
+          conversation: conversation,
+          content: 'Follow-up ngoài 24h',
+          content_attributes: {
+            is_bot_generated: true,
+            aftercare_delivery_lane: 'notification_messages',
+            aftercare_opt_in_subscription_id: subscription.id
+          }
+        )
+
+        described_class.new(message: message).perform
+
+        expect(bot).to have_received(:deliver).with({
+                                                      recipient: {
+                                                        notification_messages_token: 'meta-notification-token'
+                                                      },
+                                                      message: { text: 'Follow-up ngoài 24h' }
+                                                    }, { page_id: facebook_channel.page_id })
+      end
+
+      it 'does not send a Meta message when the aftercare lane is gmail' do
+        message = create(
+          :message,
+          message_type: 'outgoing',
+          inbox: facebook_inbox,
+          account: account,
+          conversation: conversation,
+          content: 'Follow-up sẽ gửi qua Gmail',
+          content_attributes: {
+            is_bot_generated: true,
+            aftercare_delivery_lane: 'gmail'
+          }
+        )
+
+        described_class.new(message: message).perform
+
+        expect(bot).not_to have_received(:deliver)
+      end
+
       it 'raise and exception to validate access token' do
         message = create(:message, message_type: 'outgoing', inbox: facebook_inbox, account: account, conversation: conversation)
         allow(bot).to receive(:deliver).and_raise(Facebook::Messenger::FacebookError.new('message' => 'Error validating access token'))

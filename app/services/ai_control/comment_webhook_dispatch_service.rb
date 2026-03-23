@@ -29,7 +29,7 @@ class AiControl::CommentWebhookDispatchService
     env_url = ENV.fetch('CHATBOTLEVAN_COMMENT_WEBHOOK_URL', '').to_s.strip
     return env_url.chomp('/') if env_url.present?
 
-    base_url = ENV.fetch('CHATBOTLEVAN_BASE_URL', '').to_s.strip.chomp('/')
+    base_url = ChatbotlevanEndpointResolver.chatbotlevan_base_url
     return '' if base_url.blank?
 
     "#{base_url}/webhooks/chatwoot/comments"

@@ -45,12 +45,17 @@ class Facebook::SendOnFacebookService < Base::SendOnChannelService
   end
 
   def fb_text_message_params
-    {
-      recipient: { id: contact.get_source_id(inbox.id) },
-      message: fb_text_message_payload,
+    params = {
+      recipient: fb_recipient_params,
+      message: fb_text_message_payload
+    }
+
+    return params if aftercare_standard_lane? || aftercare_notification_messages_lane?
+
+    params.merge(
       messaging_type: 'MESSAGE_TAG',
       tag: 'ACCOUNT_UPDATE'
-    }
+    )
   end
 
   def fb_text_message_payload
@@ -79,8 +84,8 @@ class Facebook::SendOnFacebookService < Base::SendOnChannelService
   end
 
   def fb_attachment_message_params(attachment)
-    {
-      recipient: { id: contact.get_source_id(inbox.id) },
+    params = {
+      recipient: fb_recipient_params,
       message: {
         attachment: {
           type: attachment_type(attachment),
@@ -88,16 +93,29 @@ class Facebook::SendOnFacebookService < Base::SendOnChannelService
             url: attachment.download_url
           }
         }
-      },
+      }
+    }
+
+    return params if aftercare_standard_lane? || aftercare_notification_messages_lane?
+
+    params.merge(
       messaging_type: 'MESSAGE_TAG',
       tag: 'ACCOUNT_UPDATE'
-    }
+    )
   end
 
   def attachment_type(attachment)
     return attachment.file_type if %w[image audio video file].include? attachment.file_type
 
     'file'
+  end
+
+  def fb_recipient_params
+    if aftercare_notification_messages_lane? && aftercare_notification_messages_token.present?
+      { notification_messages_token: aftercare_notification_messages_token }
+    else
+      { id: contact.get_source_id(inbox.id) }
+    end
   end
 
   def sent_first_outgoing_message_after_24_hours?

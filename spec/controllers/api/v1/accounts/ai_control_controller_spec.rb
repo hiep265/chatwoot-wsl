@@ -28,6 +28,7 @@ RSpec.describe 'AiControlController', type: :request do
 
       it 'returns payment review queue from chatbotlevan' do
         with_modified_env(
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
           'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
           'CHATBOTLEVAN_API_TOKEN' => 'test-token'
         ) do
@@ -78,7 +79,7 @@ RSpec.describe 'AiControlController', type: :request do
       end
 
       it 'returns unprocessable entity if CHATBOTLEVAN_BASE_URL is missing' do
-        with_modified_env('CHATBOTLEVAN_BASE_URL' => '') do
+        with_modified_env('CHATBOTLEVAN_INTERNAL_BASE_URL' => '', 'CHATBOTLEVAN_BASE_URL' => '') do
           get "/api/v1/accounts/#{account.id}/ai_control/payment_review_cases",
               headers: user.create_new_auth_token,
               as: :json
@@ -91,6 +92,7 @@ RSpec.describe 'AiControlController', type: :request do
 
       it 'returns bad gateway when chatbotlevan responds with error' do
         with_modified_env(
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
           'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
           'CHATBOTLEVAN_API_TOKEN' => 'test-token'
         ) do
@@ -135,6 +137,7 @@ RSpec.describe 'AiControlController', type: :request do
 
       it 'forwards review action to chatbotlevan' do
         with_modified_env(
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
           'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
           'CHATBOTLEVAN_API_TOKEN' => 'test-token'
         ) do
@@ -195,6 +198,7 @@ RSpec.describe 'AiControlController', type: :request do
 
       it 'forwards delete action to chatbotlevan' do
         with_modified_env(
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
           'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
           'CHATBOTLEVAN_API_TOKEN' => 'test-token'
         ) do
@@ -235,6 +239,7 @@ RSpec.describe 'AiControlController', type: :request do
 
       it 'returns daily overview proxy data and enriches local conversation fields' do
         with_modified_env(
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
           'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
           'CHATBOTLEVAN_API_TOKEN' => 'test-token'
         ) do
@@ -383,6 +388,7 @@ RSpec.describe 'AiControlController', type: :request do
 
       it 'returns customer 360 proxy data and enriches contact metadata from chatwoot' do
         with_modified_env(
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
           'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
           'CHATBOTLEVAN_API_TOKEN' => 'test-token'
         ) do
@@ -455,6 +461,7 @@ RSpec.describe 'AiControlController', type: :request do
       it 'uses CHATBOTLEVAN_COMMENT_WEBHOOK_URL when configured' do
         with_modified_env(
           'CHATBOTLEVAN_COMMENT_WEBHOOK_URL' => 'http://chatbotlevan.test/webhooks/chatwoot/comments',
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
           'CHATBOTLEVAN_BASE_URL' => ''
         ) do
           expect(WebhookJob).to receive(:perform_later).with(
@@ -482,6 +489,7 @@ RSpec.describe 'AiControlController', type: :request do
       it 'falls back to CHATBOTLEVAN_BASE_URL/comments webhook when comment webhook env is empty' do
         with_modified_env(
           'CHATBOTLEVAN_COMMENT_WEBHOOK_URL' => '',
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
           'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test'
         ) do
           expect(WebhookJob).to receive(:perform_later).with(
@@ -502,6 +510,7 @@ RSpec.describe 'AiControlController', type: :request do
       it 'prefers comment_webhook_url from request payload over env config' do
         with_modified_env(
           'CHATBOTLEVAN_COMMENT_WEBHOOK_URL' => 'http://chatbotlevan.test/webhooks/chatwoot/comments',
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
           'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test'
         ) do
           expect(WebhookJob).to receive(:perform_later).with(
@@ -523,6 +532,7 @@ RSpec.describe 'AiControlController', type: :request do
       it 'returns unprocessable entity when both comment webhook and base url are missing' do
         with_modified_env(
           'CHATBOTLEVAN_COMMENT_WEBHOOK_URL' => '',
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
           'CHATBOTLEVAN_BASE_URL' => ''
         ) do
           expect(WebhookJob).not_to receive(:perform_later)
@@ -540,6 +550,7 @@ RSpec.describe 'AiControlController', type: :request do
       it 'uses comment webhook configured in integrations settings (redis) when request and env are empty' do
         with_modified_env(
           'CHATBOTLEVAN_COMMENT_WEBHOOK_URL' => '',
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
           'CHATBOTLEVAN_BASE_URL' => ''
         ) do
           ::Redis::Alfred.set(comment_webhook_config_key, 'https://integrations.local/webhooks/chatwoot/comments')

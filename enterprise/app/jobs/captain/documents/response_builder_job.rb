@@ -26,7 +26,9 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
     end
 
     doc_id = Captain::LightRagClient.doc_id_for_captain_document(document.id)
-    Rails.logger.info("[Captain][LightRAG] Upserting document #{document.id} doc_id=#{doc_id} url=#{ENV.fetch('CAPTAIN_LIGHT_RAG_URL', '')}")
+    Rails.logger.info(
+      "[Captain][LightRAG] Upserting document #{document.id} doc_id=#{doc_id} url=#{ChatbotlevanEndpointResolver.captain_light_rag_url}"
+    )
 
     response = client.upsert_document(
       doc_id: doc_id,

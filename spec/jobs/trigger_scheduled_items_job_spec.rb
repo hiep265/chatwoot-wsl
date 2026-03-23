@@ -30,6 +30,11 @@ RSpec.describe TriggerScheduledItemsJob do
     described_class.perform_now
   end
 
+  it 'triggers Aftercare::ProcessDueStepsJob' do
+    expect(Aftercare::ProcessDueStepsJob).to receive(:perform_later).once
+    described_class.perform_now
+  end
+
   it 'triggers Notification::RemoveOldNotificationJob' do
     expect(Notification::RemoveOldNotificationJob).to receive(:perform_later).once
     described_class.perform_now

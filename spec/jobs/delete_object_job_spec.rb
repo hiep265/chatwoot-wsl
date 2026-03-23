@@ -32,6 +32,15 @@ RSpec.describe DeleteObjectJob, type: :job do
         expect(Contact.where(id: contact_ids).reload).not_to be_empty
         expect { inbox.reload }.to raise_error(ActiveRecord::RecordNotFound)
       end
+
+      it 'destroys aftercare enrollments attached to inbox conversations before deleting the inbox' do
+        enrollment = create(:aftercare_enrollment, account: account, conversation: inbox.conversations.first)
+
+        expect { described_class.perform_now(inbox) }.not_to raise_error
+
+        expect { enrollment.reload }.to raise_error(ActiveRecord::RecordNotFound)
+        expect { inbox.reload }.to raise_error(ActiveRecord::RecordNotFound)
+      end
     end
 
     context 'when object is heavy (Account)' do

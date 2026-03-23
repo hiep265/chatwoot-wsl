@@ -23,10 +23,24 @@ describe GlobalConfigService do
 
       it 'get value from env variable even if present on DB' do
         with_modified_env ENABLE_ACCOUNT_SIGNUP: 'false' do
-          expect(InstallationConfig.find_by(name: 'ENABLE_ACCOUNT_SIGNUP')&.value).to be_nil
+          InstallationConfig.where(name: 'ENABLE_ACCOUNT_SIGNUP').delete_all
+          GlobalConfig.clear_cache
+
           value = described_class.load('ENABLE_ACCOUNT_SIGNUP', 'true')
           expect(value).to eq 'false'
         end
+      end
+
+      it 'returns false when the stored config value is boolean false' do
+        config = InstallationConfig.find_or_initialize_by(name: 'ENABLE_INSTAGRAM_CHANNEL_HUMAN_AGENT')
+        config.value = false
+        config.locked = false
+        config.save!
+        GlobalConfig.clear_cache
+
+        value = described_class.load('ENABLE_INSTAGRAM_CHANNEL_HUMAN_AGENT', false)
+
+        expect(value).to be(false)
       end
 
       # it 'get value from DB if found' do

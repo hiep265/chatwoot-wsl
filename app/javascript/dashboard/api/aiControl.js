@@ -249,6 +249,98 @@ class AiControlAPI extends ApiClient {
       payload
     );
   }
+
+  listAftercareSequences() {
+    return axios.get(
+      `${this.url.replace('/ai_control', '')}/aftercare/sequences`
+    );
+  }
+
+  getAftercareEligibility({ conversationId } = {}) {
+    return axios.get(
+      `${this.url.replace('/ai_control', '')}/aftercare/eligibility`,
+      {
+        params: {
+          conversation_id: String(conversationId || '').trim(),
+        },
+      }
+    );
+  }
+
+  listAftercareEnrollments() {
+    return axios.get(
+      `${this.url.replace('/ai_control', '')}/aftercare/enrollments`
+    );
+  }
+
+  createAftercareEnrollment({
+    conversationId,
+    sequenceId,
+    contactEmail,
+    staffNote,
+    timezoneName,
+    anchorAt,
+    steps = [],
+  } = {}) {
+    return axios.post(
+      `${this.url.replace('/ai_control', '')}/aftercare/enrollments`,
+      {
+        conversation_id: String(conversationId || '').trim(),
+        sequence_id: sequenceId,
+        contact_email: String(contactEmail || '').trim(),
+        staff_note: staffNote,
+        timezone_name: timezoneName,
+        anchor_at: anchorAt,
+        steps: steps.map(step => ({
+          position: step.position,
+          title: step.title,
+          instructions: step.instructions,
+          enabled: step.enabled,
+          scheduled_for: step.scheduledFor,
+          step_note: step.stepNote,
+        })),
+      }
+    );
+  }
+
+  regenerateAftercareDraft({ enrollmentId, stepId } = {}) {
+    return axios.post(
+      `${this.url.replace('/ai_control', '')}/aftercare/enrollments/${enrollmentId}/steps/${stepId}/regenerate_draft`
+    );
+  }
+
+  updateAftercareStepDraft({ enrollmentId, stepId, draftBody } = {}) {
+    return axios.patch(
+      `${this.url.replace('/ai_control', '')}/aftercare/enrollments/${enrollmentId}/steps/${stepId}`,
+      {
+        draft_body: String(draftBody || ''),
+      }
+    );
+  }
+
+  retryAftercareStep({ enrollmentId, stepId } = {}) {
+    return axios.post(
+      `${this.url.replace('/ai_control', '')}/aftercare/enrollments/${enrollmentId}/steps/${stepId}/retry`
+    );
+  }
+
+  pauseAftercareEnrollment({ enrollmentId } = {}) {
+    return axios.post(
+      `${this.url.replace('/ai_control', '')}/aftercare/enrollments/${enrollmentId}/pause`
+    );
+  }
+
+  resumeAftercareEnrollment({ enrollmentId } = {}) {
+    return axios.post(
+      `${this.url.replace('/ai_control', '')}/aftercare/enrollments/${enrollmentId}/resume`
+    );
+  }
+
+  cancelAftercareEnrollment({ enrollmentId } = {}) {
+    return axios.post(
+      `${this.url.replace('/ai_control', '')}/aftercare/enrollments/${enrollmentId}/cancel`
+    );
+  }
 }
 
 export default new AiControlAPI();

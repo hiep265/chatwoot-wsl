@@ -35,4 +35,17 @@ RSpec.describe Channel::FacebookPage do
   it 'has a valid name' do
     expect(channel.name).to eq('Facebook')
   end
+
+  describe '#subscribe' do
+    it 'subscribes to messaging opt-in events as part of the page webhook fields' do
+      allow(Facebook::Messenger::Subscriptions).to receive(:subscribe)
+
+      channel.subscribe
+
+      expect(Facebook::Messenger::Subscriptions).to have_received(:subscribe).with(
+        access_token: channel.page_access_token,
+        subscribed_fields: array_including('messaging_optins')
+      ).at_least(:once)
+    end
+  end
 end

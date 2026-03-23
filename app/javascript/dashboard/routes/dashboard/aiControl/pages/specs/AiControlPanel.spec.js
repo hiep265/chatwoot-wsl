@@ -53,6 +53,16 @@ vi.mock('dashboard/api/aiControl', () => ({
     listPaymentReviewCases: vi.fn(),
     getBlockedInboxes: vi.fn(),
     getManagerCustomer360: vi.fn(),
+    listAftercareSequences: vi.fn(),
+    getAftercareEligibility: vi.fn(),
+    listAftercareEnrollments: vi.fn(),
+    createAftercareEnrollment: vi.fn(),
+    updateAftercareStepDraft: vi.fn(),
+    regenerateAftercareDraft: vi.fn(),
+    retryAftercareStep: vi.fn(),
+    pauseAftercareEnrollment: vi.fn(),
+    resumeAftercareEnrollment: vi.fn(),
+    cancelAftercareEnrollment: vi.fn(),
   },
 }));
 
@@ -172,6 +182,238 @@ describe('AiControlPanel', () => {
       data: { blocked_inbox_ids: [] },
     });
     AiControlAPI.getManagerCustomer360.mockResolvedValue({ data: null });
+    AiControlAPI.listAftercareSequences.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            id: 1,
+            code: 'post_purchase_checkin',
+            name: 'Chăm sóc sau mua',
+            default_timezone: 'Asia/Bangkok',
+            steps: [
+              {
+                id: 11,
+                position: 1,
+                title: 'Hỏi thăm ngày 1',
+                instructions: 'Hỏi thăm khách sau mua',
+                offset_minutes: 1440,
+                enabled: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    AiControlAPI.getAftercareEligibility.mockResolvedValue({
+      data: {
+        eligible: true,
+        reason_code: 'eligible',
+        channel_key: 'messenger',
+      },
+    });
+    AiControlAPI.listAftercareEnrollments.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            id: 91,
+            status: 'pending_optin',
+            contact: { name: 'Lan Nguyen' },
+            conversation: { id: 101, display_id: 5001 },
+            sequence: { name: 'Chăm sóc sau mua' },
+            opt_in_subscription: { status: 'requested' },
+            steps: [
+              {
+                id: 501,
+                position: 1,
+                status: 'scheduled',
+                title: 'Hỏi thăm ngày 1',
+                draft_status: 'ready',
+                draft_body: 'Bản nháp cũ cho ngày 1.',
+                draft_summary: 'Friendly day-1 check-in',
+                scheduled_for: '2026-03-19T00:00:00Z',
+                latest_dispatch_log: {
+                  id: 801,
+                  status: 'sent',
+                  sent_at: '2026-03-18T01:00:00Z',
+                },
+                dispatch_logs: [
+                  {
+                    id: 801,
+                    status: 'sent',
+                    sent_at: '2026-03-18T01:00:00Z',
+                  },
+                ],
+              },
+              {
+                id: 502,
+                position: 2,
+                status: 'failed',
+                title: 'Hỏi thăm ngày 3',
+                draft_status: 'ready',
+                draft_body: 'Draft lỗi gửi ngày 3.',
+                draft_summary: 'Retry candidate',
+                scheduled_for: '2026-03-21T00:00:00Z',
+                last_error: 'Graph API timeout',
+                latest_dispatch_log: {
+                  id: 802,
+                  status: 'failed',
+                  error_message: 'Graph API timeout',
+                },
+                dispatch_logs: [
+                  {
+                    id: 802,
+                    status: 'failed',
+                    error_message: 'Graph API timeout',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    AiControlAPI.createAftercareEnrollment.mockResolvedValue({
+      data: {
+        payload: {
+          id: 92,
+          status: 'pending_optin',
+          contact: { name: 'Lan Nguyen' },
+          conversation: { display_id: 5001 },
+          sequence: { name: 'Chăm sóc sau mua' },
+          opt_in_subscription: { status: 'not_requested' },
+          steps: [{ scheduled_for: '2026-03-19T00:00:00Z' }],
+        },
+      },
+    });
+    AiControlAPI.regenerateAftercareDraft.mockResolvedValue({
+      data: {
+        payload: {
+          id: 501,
+          position: 1,
+          title: 'Hỏi thăm ngày 1',
+          draft_status: 'ready',
+          draft_body: 'Bản nháp đã làm mới.',
+          draft_summary: 'Updated friendly day-1 check-in',
+          scheduled_for: '2026-03-19T00:00:00Z',
+        },
+      },
+    });
+    AiControlAPI.updateAftercareStepDraft.mockResolvedValue({
+      data: {
+        payload: {
+          id: 501,
+          position: 1,
+          title: 'Hỏi thăm ngày 1',
+          draft_status: 'ready',
+          draft_body: 'Bản nháp đã sửa tay cho khách.',
+          draft_summary: 'Friendly day-1 check-in',
+          scheduled_for: '2026-03-19T00:00:00Z',
+        },
+      },
+    });
+    AiControlAPI.retryAftercareStep.mockResolvedValue({
+      data: {
+        payload: {
+          id: 502,
+          position: 2,
+          status: 'scheduled',
+          title: 'Hỏi thăm ngày 3',
+          draft_status: 'ready',
+          draft_body: 'Draft lỗi gửi ngày 3.',
+          draft_summary: 'Retry candidate',
+          scheduled_for: '2026-03-21T00:00:00Z',
+          last_error: null,
+        },
+      },
+    });
+    AiControlAPI.pauseAftercareEnrollment.mockResolvedValue({
+      data: {
+        payload: {
+          id: 91,
+          status: 'paused',
+          contact: { name: 'Lan Nguyen' },
+          conversation: { id: 101, display_id: 5001 },
+          sequence: { name: 'Chăm sóc sau mua' },
+          opt_in_subscription: { status: 'requested' },
+          steps: [
+            {
+              id: 501,
+              position: 1,
+              status: 'scheduled',
+              title: 'Hỏi thăm ngày 1',
+              draft_status: 'ready',
+              draft_body: 'Bản nháp cũ cho ngày 1.',
+              scheduled_for: '2026-03-19T00:00:00Z',
+            },
+            {
+              id: 502,
+              position: 2,
+              status: 'failed',
+              title: 'Hỏi thăm ngày 3',
+              draft_status: 'ready',
+              draft_body: 'Draft lỗi gửi ngày 3.',
+              scheduled_for: '2026-03-21T00:00:00Z',
+              last_error: 'Graph API timeout',
+            },
+          ],
+        },
+      },
+    });
+    AiControlAPI.resumeAftercareEnrollment.mockResolvedValue({
+      data: {
+        payload: {
+          id: 91,
+          status: 'active',
+          contact: { name: 'Lan Nguyen' },
+          conversation: { id: 101, display_id: 5001 },
+          sequence: { name: 'Chăm sóc sau mua' },
+          opt_in_subscription: { status: 'subscribed' },
+          steps: [
+            {
+              id: 501,
+              position: 1,
+              status: 'scheduled',
+              title: 'Hỏi thăm ngày 1',
+              draft_status: 'ready',
+              draft_body: 'Bản nháp cũ cho ngày 1.',
+              scheduled_for: '2026-03-19T00:00:00Z',
+            },
+          ],
+        },
+      },
+    });
+    AiControlAPI.cancelAftercareEnrollment.mockResolvedValue({
+      data: {
+        payload: {
+          id: 91,
+          status: 'cancelled',
+          contact: { name: 'Lan Nguyen' },
+          conversation: { id: 101, display_id: 5001 },
+          sequence: { name: 'Chăm sóc sau mua' },
+          opt_in_subscription: { status: 'requested' },
+          steps: [
+            {
+              id: 501,
+              position: 1,
+              status: 'cancelled',
+              title: 'Hỏi thăm ngày 1',
+              draft_status: 'ready',
+              draft_body: 'Bản nháp cũ cho ngày 1.',
+              scheduled_for: '2026-03-19T00:00:00Z',
+            },
+            {
+              id: 502,
+              position: 2,
+              status: 'cancelled',
+              title: 'Hỏi thăm ngày 3',
+              draft_status: 'ready',
+              draft_body: 'Draft lỗi gửi ngày 3.',
+              scheduled_for: '2026-03-21T00:00:00Z',
+            },
+          ],
+        },
+      },
+    });
   });
 
   afterEach(() => {
@@ -292,6 +534,306 @@ describe('AiControlPanel', () => {
       undefined,
       undefined,
       false
+    );
+  });
+
+  it('loads the aftercare tab with existing enrollments', async () => {
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-aftercare"]').trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.listAftercareEnrollments).toHaveBeenCalled();
+    expect(wrapper.text()).toContain('Lan Nguyen');
+    expect(wrapper.text()).toContain('Chăm sóc sau mua');
+    expect(wrapper.text()).toContain('Bản nháp cũ cho ngày 1.');
+    expect(wrapper.text()).toContain('Gửi gần nhất');
+  });
+
+  it('regenerates an aftercare draft and updates the preview inline', async () => {
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-aftercare"]').trigger('click');
+    await flushPromises();
+
+    await wrapper
+      .find('[data-test-id="aftercare-regenerate-91-501"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.regenerateAftercareDraft).toHaveBeenCalledWith({
+      enrollmentId: '91',
+      stepId: '501',
+    });
+    expect(wrapper.text()).toContain('Bản nháp đã làm mới.');
+  });
+
+  it('allows editing an aftercare draft manually and saves the updated content inline', async () => {
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-aftercare"]').trigger('click');
+    await flushPromises();
+
+    await wrapper
+      .find('[data-test-id="aftercare-edit-91-501"]')
+      .trigger('click');
+    await flushPromises();
+
+    await wrapper
+      .find('[data-test-id="aftercare-edit-input-91-501"]')
+      .setValue('Bản nháp đã sửa tay cho khách.');
+    await wrapper
+      .find('[data-test-id="aftercare-edit-save-91-501"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.updateAftercareStepDraft).toHaveBeenCalledWith({
+      enrollmentId: '91',
+      stepId: '501',
+      draftBody: 'Bản nháp đã sửa tay cho khách.',
+    });
+    expect(wrapper.text()).toContain('Bản nháp đã sửa tay cho khách.');
+  });
+
+  it('retries a failed aftercare step and updates the step state inline', async () => {
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-aftercare"]').trigger('click');
+    await flushPromises();
+
+    await wrapper
+      .find('[data-test-id="aftercare-retry-91-502"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.retryAftercareStep).toHaveBeenCalledWith({
+      enrollmentId: '91',
+      stepId: '502',
+    });
+    expect(
+      wrapper.vm.aftercareEnrollments[0].steps.find(step => step.id === 502).status
+    ).toBe('scheduled');
+  });
+
+  it('cancels an enrollment from the aftercare tab and updates the status inline', async () => {
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-aftercare"]').trigger('click');
+    await flushPromises();
+
+    await wrapper
+      .find('[data-test-id="aftercare-cancel-91"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.cancelAftercareEnrollment).toHaveBeenCalledWith({
+      enrollmentId: '91',
+    });
+    expect(wrapper.vm.aftercareEnrollments[0].status).toBe('cancelled');
+  });
+
+  it('pauses an active enrollment from the aftercare tab and updates the status inline', async () => {
+    AiControlAPI.listAftercareEnrollments.mockResolvedValueOnce({
+      data: {
+        payload: [
+          {
+            id: 91,
+            status: 'active',
+            contact: { name: 'Lan Nguyen' },
+            conversation: { id: 101, display_id: 5001 },
+            sequence: { name: 'Chăm sóc sau mua' },
+            opt_in_subscription: { status: 'subscribed' },
+            steps: [
+              {
+                id: 501,
+                position: 1,
+                status: 'scheduled',
+                title: 'Hỏi thăm ngày 1',
+                draft_status: 'ready',
+                draft_body: 'Bản nháp cũ cho ngày 1.',
+                scheduled_for: '2026-03-19T00:00:00Z',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-aftercare"]').trigger('click');
+    await flushPromises();
+
+    await wrapper
+      .find('[data-test-id="aftercare-pause-91"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.pauseAftercareEnrollment).toHaveBeenCalledWith({
+      enrollmentId: '91',
+    });
+    expect(wrapper.vm.aftercareEnrollments[0].status).toBe('paused');
+  });
+
+  it('resumes a paused enrollment from the aftercare tab and updates the status inline', async () => {
+    AiControlAPI.listAftercareEnrollments.mockResolvedValueOnce({
+      data: {
+        payload: [
+          {
+            id: 91,
+            status: 'paused',
+            contact: { name: 'Lan Nguyen' },
+            conversation: { id: 101, display_id: 5001 },
+            sequence: { name: 'Chăm sóc sau mua' },
+            opt_in_subscription: { status: 'subscribed' },
+            steps: [
+              {
+                id: 501,
+                position: 1,
+                status: 'scheduled',
+                title: 'Hỏi thăm ngày 1',
+                draft_status: 'ready',
+                draft_body: 'Bản nháp cũ cho ngày 1.',
+                scheduled_for: '2026-03-19T00:00:00Z',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-aftercare"]').trigger('click');
+    await flushPromises();
+
+    await wrapper
+      .find('[data-test-id="aftercare-resume-91"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.resumeAftercareEnrollment).toHaveBeenCalledWith({
+      enrollmentId: '91',
+    });
+    expect(wrapper.vm.aftercareEnrollments[0].status).toBe('active');
+  });
+
+  it('opens the aftercare dialog for the selected conversation and submits a new enrollment', async () => {
+    const wrapper = createWrapper();
+
+    wrapper.vm.localAiControlConversationId = 101;
+    wrapper.vm.customer360 = {
+      contact_profile: {
+        name: 'Lan Nguyen',
+        email: 'lan.nguyen@example.com',
+      },
+      conversation: { display_id: 5001 },
+    };
+    await nextTick();
+
+    await wrapper.find('[data-test-id="aftercare-open-dialog"]').trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.listAftercareSequences).toHaveBeenCalled();
+    expect(AiControlAPI.getAftercareEligibility).toHaveBeenCalledWith({
+      conversationId: '101',
+    });
+
+    await wrapper
+      .find('[data-test-id="aftercare-note-input"]')
+      .setValue('Khách vừa mua gói cơ bản');
+    await wrapper
+      .find('[data-test-id="aftercare-contact-email-input"]')
+      .setValue('lan.aftercare@example.com');
+    await wrapper
+      .find('[data-test-id="aftercare-anchor-input"]')
+      .setValue('2026-03-19T10:00');
+    await wrapper.find('[data-test-id="aftercare-submit"]').trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.createAftercareEnrollment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: '101',
+        sequenceId: 1,
+        staffNote: 'Khách vừa mua gói cơ bản',
+        contactEmail: 'lan.aftercare@example.com',
+      })
+    );
+  });
+
+  it('surfaces Gmail readiness warnings in the aftercare tab', async () => {
+    AiControlAPI.listAftercareEnrollments.mockResolvedValueOnce({
+      data: {
+        payload: [
+          {
+            id: 91,
+            status: 'blocked_capability_disabled',
+            contact: { name: 'Lan Nguyen' },
+            conversation: { id: 101, display_id: 5001 },
+            sequence: { name: 'Chăm sóc sau mua' },
+            opt_in_subscription: {
+              status: 'unsupported_channel_capability',
+              capability_status: 'smtp_not_configured',
+            },
+            steps: [],
+          },
+        ],
+      },
+    });
+
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-aftercare"]').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Gmail: SMTP/Gmail chưa cấu hình.');
+    expect(wrapper.text()).toContain('Gmail chưa sẵn sàng');
+  });
+
+  it('renders long aftercare draft previews on a single line', async () => {
+    const longDraft = [
+      'Khách vừa mua khóa nên cần nhắn lời chào mừng và nhắc kiểm tra email kích hoạt.',
+      'Đồng thời gợi ý phản hồi nếu khách chưa thấy tài liệu trong hộp thư.',
+    ].join('\n');
+
+    AiControlAPI.listAftercareEnrollments.mockResolvedValueOnce({
+      data: {
+        payload: [
+          {
+            id: 91,
+            status: 'pending_optin',
+            contact: { name: 'Lan Nguyen' },
+            conversation: { id: 101, display_id: 5001 },
+            sequence: { name: 'Chăm sóc sau mua' },
+            opt_in_subscription: { status: 'requested' },
+            steps: [
+              {
+                id: 501,
+                position: 1,
+                status: 'scheduled',
+                title: 'Hỏi thăm ngày 1',
+                draft_status: 'ready',
+                draft_body: longDraft,
+                scheduled_for: '2026-03-19T00:00:00Z',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-aftercare"]').trigger('click');
+    await flushPromises();
+
+    const preview = wrapper.find('[data-test-id="aftercare-draft-preview-91-501"]');
+
+    expect(preview.attributes('title')).toBe(longDraft);
+    expect(preview.text()).toContain('Khách vừa mua khóa');
+    expect(preview.text()).toContain('...');
+    expect(preview.text()).not.toContain(
+      'Đồng thời gợi ý phản hồi nếu khách chưa thấy tài liệu trong hộp thư.'
     );
   });
 });

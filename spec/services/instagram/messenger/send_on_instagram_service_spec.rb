@@ -144,6 +144,117 @@ describe Instagram::Messenger::SendOnInstagramService do
           described_class.new(message: message).perform
           expect(HTTParty).to have_received(:post)
         end
+
+        it 'bypasses HUMAN_AGENT tagging for aftercare standard-lane messages' do
+          enrollment = create(
+            :aftercare_enrollment,
+            account: account,
+            conversation: conversation,
+            contact: contact,
+            inbox: instagram_messenger_inbox,
+            created_by: create(:user, account: account, role: :administrator),
+            status: :active
+          )
+          subscription = create(
+            :aftercare_opt_in_subscription,
+            aftercare_enrollment: enrollment,
+            status: :subscribed,
+            provider: 'meta',
+            capability_status: 'supported',
+            token_ref: 'ig-meta-token'
+          )
+          message = create(
+            :message,
+            message_type: 'outgoing',
+            inbox: instagram_messenger_inbox,
+            account: account,
+            conversation: conversation,
+            content: 'Follow-up IG trong 24h',
+            content_attributes: {
+              is_bot_generated: true,
+              aftercare_delivery_lane: 'standard',
+              aftercare_opt_in_subscription_id: subscription.id
+            }
+          )
+
+          described_class.new(message: message).perform
+
+          expect(HTTParty).to have_received(:post).with(
+            'https://graph.facebook.com/v11.0/me/messages',
+            hash_including(
+              body: {
+                recipient: { id: contact.get_source_id(instagram_messenger_inbox.id) },
+                message: { text: 'Follow-up IG trong 24h' }
+              }
+            )
+          )
+        end
+
+        it 'uses notification_messages_token for aftercare messages outside 24 hours' do
+          enrollment = create(
+            :aftercare_enrollment,
+            account: account,
+            conversation: conversation,
+            contact: contact,
+            inbox: instagram_messenger_inbox,
+            created_by: create(:user, account: account, role: :administrator),
+            status: :active
+          )
+          subscription = create(
+            :aftercare_opt_in_subscription,
+            aftercare_enrollment: enrollment,
+            status: :subscribed,
+            provider: 'meta',
+            capability_status: 'supported',
+            token_ref: 'ig-notification-token'
+          )
+          message = create(
+            :message,
+            message_type: 'outgoing',
+            inbox: instagram_messenger_inbox,
+            account: account,
+            conversation: conversation,
+            content: 'Follow-up IG ngoài 24h',
+            content_attributes: {
+              is_bot_generated: true,
+              aftercare_delivery_lane: 'notification_messages',
+              aftercare_opt_in_subscription_id: subscription.id
+            }
+          )
+
+          described_class.new(message: message).perform
+
+          expect(HTTParty).to have_received(:post).with(
+            'https://graph.facebook.com/v11.0/me/messages',
+            hash_including(
+              body: {
+                recipient: {
+                  notification_messages_token: 'ig-notification-token'
+                },
+                message: { text: 'Follow-up IG ngoài 24h' }
+              }
+            )
+          )
+        end
+
+        it 'does not call the Instagram Messenger API when the aftercare lane is gmail' do
+          message = create(
+            :message,
+            message_type: 'outgoing',
+            inbox: instagram_messenger_inbox,
+            account: account,
+            conversation: conversation,
+            content: 'Follow-up IG sẽ gửi qua Gmail',
+            content_attributes: {
+              is_bot_generated: true,
+              aftercare_delivery_lane: 'gmail'
+            }
+          )
+
+          described_class.new(message: message).perform
+
+          expect(HTTParty).not_to have_received(:post)
+        end
       end
     end
 

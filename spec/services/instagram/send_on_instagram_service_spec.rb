@@ -109,7 +109,7 @@ describe Instagram::SendOnInstagramService do
 
       context 'with message_tag HUMAN_AGENT' do
         before do
-          InstallationConfig.where(name: 'ENABLE_MESSENGER_CHANNEL_HUMAN_AGENT').first_or_create(value: true)
+          InstallationConfig.where(name: 'ENABLE_INSTAGRAM_CHANNEL_HUMAN_AGENT').first_or_create(value: true)
         end
 
         it 'if message is sent from chatwoot and is outgoing' do
@@ -132,6 +132,72 @@ describe Instagram::SendOnInstagramService do
 
           described_class.new(message: message).perform
           expect(HTTParty).to have_received(:post)
+        end
+
+        it 'keeps aftercare standard-lane messages untagged even when HUMAN_AGENT is enabled' do
+          enrollment = create(
+            :aftercare_enrollment,
+            account: account,
+            conversation: conversation,
+            contact: contact,
+            inbox: instagram_inbox,
+            created_by: create(:user, account: account, role: :administrator),
+            status: :active
+          )
+          subscription = create(
+            :aftercare_opt_in_subscription,
+            aftercare_enrollment: enrollment,
+            status: :subscribed,
+            provider: 'meta',
+            capability_status: 'supported',
+            token_ref: 'instagram-aftercare-token'
+          )
+          message = create(
+            :message,
+            message_type: 'outgoing',
+            inbox: instagram_inbox,
+            account: account,
+            conversation: conversation,
+            content: 'Follow-up trong 24h qua Instagram',
+            content_attributes: {
+              is_bot_generated: true,
+              aftercare_delivery_lane: 'standard',
+              aftercare_opt_in_subscription_id: subscription.id
+            }
+          )
+
+          described_class.new(message: message).perform
+
+          expect(HTTParty).to have_received(:post).with(
+            "https://graph.instagram.com/v22.0/#{instagram_channel.instagram_id}/messages",
+            hash_including(
+              body: {
+                recipient: { id: contact.get_source_id(instagram_inbox.id) },
+                message: {
+                  text: 'Follow-up trong 24h qua Instagram'
+                }
+              }
+            )
+          )
+        end
+
+        it 'does not call the Instagram API when the aftercare lane is gmail' do
+          message = create(
+            :message,
+            message_type: 'outgoing',
+            inbox: instagram_inbox,
+            account: account,
+            conversation: conversation,
+            content: 'Follow-up sẽ gửi qua Gmail',
+            content_attributes: {
+              is_bot_generated: true,
+              aftercare_delivery_lane: 'gmail'
+            }
+          )
+
+          described_class.new(message: message).perform
+
+          expect(HTTParty).not_to have_received(:post)
         end
       end
 

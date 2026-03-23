@@ -28,18 +28,20 @@ class Instagram::BaseSendService < Base::SendOnChannelService
 
   def message_params
     params = {
-      recipient: { id: contact.get_source_id(inbox.id) },
+      recipient: instagram_recipient_params,
       message: {
         text: message.outgoing_content
       }
     }
+
+    return params if aftercare_standard_lane? || aftercare_notification_messages_lane?
 
     merge_human_agent_tag(params)
   end
 
   def attachment_message_params(attachment)
     params = {
-      recipient: { id: contact.get_source_id(inbox.id) },
+      recipient: instagram_recipient_params,
       message: {
         attachment: {
           type: attachment_type(attachment),
@@ -49,6 +51,8 @@ class Instagram::BaseSendService < Base::SendOnChannelService
         }
       }
     }
+
+    return params if aftercare_standard_lane? || aftercare_notification_messages_lane?
 
     merge_human_agent_tag(params)
   end
@@ -82,6 +86,14 @@ class Instagram::BaseSendService < Base::SendOnChannelService
     return attachment.file_type if %w[image audio video file].include? attachment.file_type
 
     'file'
+  end
+
+  def instagram_recipient_params
+    if aftercare_notification_messages_lane? && aftercare_notification_messages_token.present?
+      { notification_messages_token: aftercare_notification_messages_token }
+    else
+      { id: contact.get_source_id(inbox.id) }
+    end
   end
 
   # Methods to be implemented by child classes

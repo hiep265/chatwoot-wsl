@@ -12,6 +12,8 @@ services:
       - storage_data:/app/storage
     networks:
       - chatwoot_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   rails:
     <<: *base

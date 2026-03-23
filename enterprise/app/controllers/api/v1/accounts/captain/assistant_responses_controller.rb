@@ -226,7 +226,7 @@ class Api::V1::Accounts::Captain::AssistantResponsesController < Api::V1::Accoun
   end
 
   def chatbotlevan_base_url
-    ENV.fetch('CHATBOTLEVAN_BASE_URL', '').to_s.strip.chomp('/')
+    ChatbotlevanEndpointResolver.chatbotlevan_base_url
   end
 
   def post_chatbotlevan_json(url, payload)

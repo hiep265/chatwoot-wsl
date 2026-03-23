@@ -14,6 +14,7 @@ class Base::SendOnChannelService
     validate_target_channel
     return unless outgoing_message?
     return if invalid_message?
+    return if aftercare_email_lane?
 
     perform_reply
   end
@@ -51,5 +52,43 @@ class Base::SendOnChannelService
 
   def validate_target_channel
     raise 'Invalid channel service was called' if inbox.channel.class != channel_class
+  end
+
+  def normalized_content_attributes
+    @normalized_content_attributes ||= begin
+      attrs = message.content_attributes
+      attrs = JSON.parse(attrs) if attrs.is_a?(String)
+      attrs.is_a?(Hash) ? attrs.stringify_keys : {}
+    rescue JSON::ParserError
+      {}
+    end
+  end
+
+  def aftercare_delivery_lane
+    normalized_content_attributes['aftercare_delivery_lane'].to_s.presence
+  end
+
+  def aftercare_standard_lane?
+    aftercare_delivery_lane == 'standard'
+  end
+
+  def aftercare_notification_messages_lane?
+    aftercare_delivery_lane == 'notification_messages'
+  end
+
+  def aftercare_email_lane?
+    aftercare_delivery_lane == 'gmail'
+  end
+
+  def aftercare_opt_in_subscription
+    return @aftercare_opt_in_subscription if defined?(@aftercare_opt_in_subscription)
+
+    subscription_id = normalized_content_attributes['aftercare_opt_in_subscription_id'].presence
+    @aftercare_opt_in_subscription =
+      subscription_id.present? ? AftercareOptInSubscription.find_by(id: subscription_id) : nil
+  end
+
+  def aftercare_notification_messages_token
+    aftercare_opt_in_subscription&.token_ref
   end
 end

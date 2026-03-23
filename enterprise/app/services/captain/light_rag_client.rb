@@ -24,7 +24,7 @@ class Captain::LightRagClient
   end
 
   def initialize(
-    base_url: ENV.fetch('CAPTAIN_LIGHT_RAG_URL', nil),
+    base_url: ChatbotlevanEndpointResolver.captain_light_rag_url,
     api_key: ENV.fetch('CAPTAIN_LIGHT_RAG_API_KEY', nil),
     timeout: ENV.fetch('CAPTAIN_LIGHT_RAG_TIMEOUT', DEFAULT_TIMEOUT).to_i
   )

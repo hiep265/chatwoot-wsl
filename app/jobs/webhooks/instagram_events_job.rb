@@ -3,7 +3,7 @@ class Webhooks::InstagramEventsJob < MutexApplicationJob
   retry_on LockAcquisitionError, wait: 1.second, attempts: 8
 
   # @return [Array] We will support further events like reaction or seen in future
-  SUPPORTED_EVENTS = [:message, :read].freeze
+  SUPPORTED_EVENTS = [:message, :read, :optin].freeze
 
   def perform(entries)
     @entries = entries
@@ -110,7 +110,7 @@ class Webhooks::InstagramEventsJob < MutexApplicationJob
   end
 
   def event_name(messaging)
-    @event_name ||= SUPPORTED_EVENTS.find { |key| messaging.key?(key) }
+    SUPPORTED_EVENTS.find { |key| messaging.key?(key) }
   end
 
   def message(messaging, channel)
@@ -124,6 +124,13 @@ class Webhooks::InstagramEventsJob < MutexApplicationJob
   def read(messaging, channel)
     # Use a single service to handle read status for both channel types since the params are same
     ::Instagram::ReadStatusService.new(params: messaging, channel: channel).perform
+  end
+
+  def optin(messaging, channel)
+    Aftercare::ProcessMetaOptInEventService.new(
+      payload: messaging,
+      channel: channel
+    ).perform
   end
 
   def messages(entry)

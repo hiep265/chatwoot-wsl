@@ -18,6 +18,7 @@ import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 
 import AddLabel from '../../settings/labels/AddLabel.vue';
 import CommentThread from './CommentThread.vue';
+import AftercareEnrollmentDialog from './AftercareEnrollmentDialog.vue';
 
 import { useAlert } from 'dashboard/composables';
 import { emitter } from 'shared/helpers/mitt';
@@ -70,6 +71,21 @@ const managerQueuesError = ref('');
 const customer360 = ref(null);
 const isCustomer360Loading = ref(false);
 const customer360Error = ref('');
+const aftercareSequences = ref([]);
+const aftercareEnrollments = ref([]);
+const aftercareEligibility = ref(null);
+const aftercareLastError = ref('');
+const isAftercareLoading = ref(false);
+const isAftercareDialogLoading = ref(false);
+const isAftercareSubmitting = ref(false);
+const showAftercareDialog = ref(false);
+const aftercareEditingDraftStepIds = ref(new Set());
+const aftercareSavingDraftStepIds = ref(new Set());
+const aftercareDraftEdits = ref({});
+const aftercareRefreshingStepIds = ref(new Set());
+const aftercareRetryingStepIds = ref(new Set());
+const aftercareCancellingEnrollmentIds = ref(new Set());
+const aftercareTransitioningEnrollmentIds = ref(new Set());
 
 // Sorted payment cases: pending (chờ xác nhận) first
 const sortedPaymentReviewCases = computed(() => {
@@ -172,6 +188,24 @@ const adminPanelRoute = computed(() => {
 const hasSelectedConversation = computed(() => {
   const id = String(aiControlConversationId.value || '').trim();
   return Boolean(id && id !== '0');
+});
+
+const selectedAftercareConversationLabel = computed(() => {
+  if (!hasSelectedConversation.value) return '';
+
+  const name =
+    customer360.value?.contact_profile?.name ||
+    customer360.value?.contact_id ||
+    'Khách hàng';
+  const displayId =
+    customer360.value?.conversation?.display_id || aiControlConversationId.value;
+  return `${name} · #${displayId}`;
+});
+
+const selectedAftercareContactEmail = computed(() => {
+  if (!hasSelectedConversation.value) return '';
+
+  return String(customer360.value?.contact_profile?.email || '').trim();
 });
 
 // Label management state
@@ -1604,6 +1638,603 @@ const fetchCustomer360 = async conversationId => {
   }
 };
 
+const fetchAftercareSequences = async () => {
+  const response = await AiControlAPI.listAftercareSequences();
+  aftercareSequences.value = Array.isArray(response?.data?.payload)
+    ? response.data.payload
+    : [];
+};
+
+const fetchAftercareEligibility = async conversationId => {
+  const normalizedId = String(conversationId || '').trim();
+  if (!normalizedId || normalizedId === '0') {
+    aftercareEligibility.value = null;
+    return null;
+  }
+
+  const response = await AiControlAPI.getAftercareEligibility({
+    conversationId: normalizedId,
+  });
+  aftercareEligibility.value =
+    response?.data && typeof response.data === 'object' ? response.data : null;
+  return aftercareEligibility.value;
+};
+
+const fetchAftercareEnrollments = async () => {
+  isAftercareLoading.value = true;
+  aftercareLastError.value = '';
+
+  try {
+    const response = await AiControlAPI.listAftercareEnrollments();
+    aftercareEnrollments.value = Array.isArray(response?.data?.payload)
+      ? response.data.payload
+      : [];
+  } catch (error) {
+    aftercareEnrollments.value = [];
+    aftercareLastError.value =
+      error?.response?.data?.error ||
+      error?.response?.data?.detail ||
+      'Không tải được danh sách tư vấn sau mua.';
+    useAlert(aftercareLastError.value);
+  } finally {
+    isAftercareLoading.value = false;
+  }
+};
+
+const aftercareDraftEditKey = (enrollmentId, stepId) => {
+  return `${String(enrollmentId || '').trim()}:${String(stepId || '').trim()}`;
+};
+
+const isAftercareDraftEditing = (enrollmentId, stepId) => {
+  return aftercareEditingDraftStepIds.value.has(
+    aftercareDraftEditKey(enrollmentId, stepId)
+  );
+};
+
+const isAftercareDraftSaving = (enrollmentId, stepId) => {
+  return aftercareSavingDraftStepIds.value.has(
+    aftercareDraftEditKey(enrollmentId, stepId)
+  );
+};
+
+const getAftercareDraftEditValue = (enrollmentId, stepId) => {
+  const key = aftercareDraftEditKey(enrollmentId, stepId);
+  return String(aftercareDraftEdits.value[key] || '');
+};
+
+const setAftercareDraftEditValue = (enrollmentId, stepId, value) => {
+  const key = aftercareDraftEditKey(enrollmentId, stepId);
+  aftercareDraftEdits.value = {
+    ...aftercareDraftEdits.value,
+    [key]: String(value || ''),
+  };
+};
+
+const startAftercareDraftEdit = (enrollmentId, step) => {
+  const normalizedEnrollmentId = String(enrollmentId || '').trim();
+  const normalizedStepId = String(step?.id || '').trim();
+  if (!normalizedEnrollmentId || !normalizedStepId) return;
+
+  const key = aftercareDraftEditKey(normalizedEnrollmentId, normalizedStepId);
+  aftercareEditingDraftStepIds.value = new Set([
+    ...Array.from(aftercareEditingDraftStepIds.value || []),
+    key,
+  ]);
+  setAftercareDraftEditValue(
+    normalizedEnrollmentId,
+    normalizedStepId,
+    step?.draft_body || ''
+  );
+};
+
+const cancelAftercareDraftEdit = (enrollmentId, stepId) => {
+  const key = aftercareDraftEditKey(enrollmentId, stepId);
+  const nextEditing = new Set(aftercareEditingDraftStepIds.value || []);
+  nextEditing.delete(key);
+  aftercareEditingDraftStepIds.value = nextEditing;
+
+  const nextDraftEdits = { ...(aftercareDraftEdits.value || {}) };
+  delete nextDraftEdits[key];
+  aftercareDraftEdits.value = nextDraftEdits;
+};
+
+const setAftercareDraftSaving = (enrollmentId, stepId, isSaving) => {
+  const key = aftercareDraftEditKey(enrollmentId, stepId);
+  const next = new Set(aftercareSavingDraftStepIds.value || []);
+  if (isSaving) {
+    next.add(key);
+  } else {
+    next.delete(key);
+  }
+  aftercareSavingDraftStepIds.value = next;
+};
+
+const setAftercareStepRefreshing = (stepId, isRefreshing) => {
+  const key = String(stepId || '').trim();
+  const next = new Set(aftercareRefreshingStepIds.value);
+  if (!key) return;
+
+  if (isRefreshing) {
+    next.add(key);
+  } else {
+    next.delete(key);
+  }
+
+  aftercareRefreshingStepIds.value = next;
+};
+
+const isAftercareStepRefreshing = stepId => {
+  return aftercareRefreshingStepIds.value.has(String(stepId || '').trim());
+};
+
+const setAftercareStepRetrying = (stepId, isRetrying) => {
+  const normalizedId = String(stepId || '').trim();
+  if (!normalizedId) return;
+
+  const next = new Set(aftercareRetryingStepIds.value);
+  if (isRetrying) {
+    next.add(normalizedId);
+  } else {
+    next.delete(normalizedId);
+  }
+  aftercareRetryingStepIds.value = next;
+};
+
+const isAftercareStepRetrying = stepId => {
+  return aftercareRetryingStepIds.value.has(String(stepId || '').trim());
+};
+
+const setAftercareEnrollmentCancelling = (enrollmentId, isCancelling) => {
+  const normalizedId = String(enrollmentId || '').trim();
+  if (!normalizedId) return;
+
+  const next = new Set(aftercareCancellingEnrollmentIds.value);
+  if (isCancelling) {
+    next.add(normalizedId);
+  } else {
+    next.delete(normalizedId);
+  }
+  aftercareCancellingEnrollmentIds.value = next;
+};
+
+const isAftercareEnrollmentCancelling = enrollmentId => {
+  return aftercareCancellingEnrollmentIds.value.has(
+    String(enrollmentId || '').trim()
+  );
+};
+
+const setAftercareEnrollmentTransitioning = (enrollmentId, isTransitioning) => {
+  const normalizedId = String(enrollmentId || '').trim();
+  if (!normalizedId) return;
+
+  const next = new Set(aftercareTransitioningEnrollmentIds.value);
+  if (isTransitioning) {
+    next.add(normalizedId);
+  } else {
+    next.delete(normalizedId);
+  }
+  aftercareTransitioningEnrollmentIds.value = next;
+};
+
+const isAftercareEnrollmentTransitioning = enrollmentId => {
+  return aftercareTransitioningEnrollmentIds.value.has(
+    String(enrollmentId || '').trim()
+  );
+};
+
+const openAftercareDialog = async () => {
+  const normalizedId = String(aiControlConversationId.value || '').trim();
+  if (!normalizedId || normalizedId === '0') {
+    useAlert('Chọn một hội thoại trước khi tạo kế hoạch tư vấn sau mua.');
+    return;
+  }
+
+  showAftercareDialog.value = true;
+  isAftercareDialogLoading.value = true;
+  aftercareLastError.value = '';
+
+  try {
+    await Promise.all([
+      fetchAftercareSequences(),
+      fetchAftercareEligibility(normalizedId),
+    ]);
+  } catch (error) {
+    aftercareLastError.value =
+      error?.response?.data?.error ||
+      error?.response?.data?.detail ||
+      'Không tải được cấu hình tư vấn sau mua.';
+    useAlert(aftercareLastError.value);
+  } finally {
+    isAftercareDialogLoading.value = false;
+  }
+};
+
+const submitAftercareEnrollment = async payload => {
+  isAftercareSubmitting.value = true;
+
+  try {
+    await AiControlAPI.createAftercareEnrollment(payload);
+    showAftercareDialog.value = false;
+    activeMainTab.value = 'aftercare';
+    await fetchAftercareEnrollments();
+    useAlert('Đã tạo kế hoạch tư vấn sau mua.');
+  } catch (error) {
+    const message =
+      error?.response?.data?.detail ||
+      error?.response?.data?.error ||
+      'Không thể tạo kế hoạch tư vấn sau mua.';
+    useAlert(String(message));
+  } finally {
+    isAftercareSubmitting.value = false;
+  }
+};
+
+const aftercareDraftStatusText = value => {
+  const key = String(value || '').trim();
+  const labels = {
+    not_requested: 'Chưa tạo bản nháp',
+    pending: 'Đang tạo bản nháp',
+    ready: 'Đã sẵn sàng',
+    failed_generation: 'Lỗi tạo bản nháp',
+  };
+  return labels[key] || key || '—';
+};
+
+const aftercareStepStatusText = value => {
+  const key = String(value || '').trim();
+  const labels = {
+    draft_pending: 'Chờ bản nháp',
+    draft_ready: 'Bản nháp sẵn sàng',
+    scheduled: 'Chờ gửi',
+    sending: 'Đang gửi',
+    sent: 'Đã gửi',
+    failed: 'Lỗi gửi',
+    cancelled: 'Đã hủy',
+    skipped: 'Bỏ qua',
+  };
+  return labels[key] || key || '—';
+};
+
+const aftercareDispatchStatusText = value => {
+  const key = String(value || '').trim();
+  const labels = {
+    sending: 'Đang gửi',
+    sent: 'Đã gửi',
+    failed: 'Lỗi gửi',
+  };
+  return labels[key] || key || '—';
+};
+
+const updateAftercareEnrollmentInState = enrollmentPayload => {
+  const normalizedEnrollmentId = String(enrollmentPayload?.id || '').trim();
+  if (!normalizedEnrollmentId) return;
+
+  aftercareEnrollments.value = (aftercareEnrollments.value || []).map(item => {
+    if (String(item?.id || '').trim() !== normalizedEnrollmentId) {
+      return item;
+    }
+
+    return {
+      ...item,
+      ...enrollmentPayload,
+    };
+  });
+};
+
+const updateAftercareStepInState = (enrollmentId, stepPayload) => {
+  const normalizedEnrollmentId = String(enrollmentId || '').trim();
+  const normalizedStepId = String(stepPayload?.id || '').trim();
+  if (!normalizedEnrollmentId || !normalizedStepId) return;
+
+  aftercareEnrollments.value = (aftercareEnrollments.value || []).map(item => {
+    if (String(item?.id || '').trim() !== normalizedEnrollmentId) {
+      return item;
+    }
+
+    const nextSteps = Array.isArray(item?.steps)
+      ? item.steps.map(step => {
+          if (String(step?.id || '').trim() !== normalizedStepId) {
+            return step;
+          }
+
+          return {
+            ...step,
+            ...stepPayload,
+          };
+        })
+      : [];
+
+    return {
+      ...item,
+      steps: nextSteps,
+    };
+  });
+};
+
+const regenerateAftercareDraft = async (enrollmentId, stepId) => {
+  const normalizedEnrollmentId = String(enrollmentId || '').trim();
+  const normalizedStepId = String(stepId || '').trim();
+  if (!normalizedEnrollmentId || !normalizedStepId) return;
+
+  setAftercareStepRefreshing(normalizedStepId, true);
+
+  try {
+    const response = await AiControlAPI.regenerateAftercareDraft({
+      enrollmentId: normalizedEnrollmentId,
+      stepId: normalizedStepId,
+    });
+    const payload =
+      response?.data && typeof response.data === 'object'
+        ? response.data.payload
+        : null;
+    if (payload && typeof payload === 'object') {
+      updateAftercareStepInState(normalizedEnrollmentId, payload);
+    }
+    useAlert('Đã tạo lại bản nháp tư vấn sau mua.');
+  } catch (error) {
+    const message =
+      error?.response?.data?.detail ||
+      error?.response?.data?.error ||
+      'Không thể tạo lại bản nháp tư vấn sau mua.';
+    useAlert(String(message));
+  } finally {
+    setAftercareStepRefreshing(normalizedStepId, false);
+  }
+};
+
+const saveAftercareDraftEdit = async (enrollmentId, stepId) => {
+  const normalizedEnrollmentId = String(enrollmentId || '').trim();
+  const normalizedStepId = String(stepId || '').trim();
+  if (!normalizedEnrollmentId || !normalizedStepId) return;
+
+  const draftBody = getAftercareDraftEditValue(
+    normalizedEnrollmentId,
+    normalizedStepId
+  ).trim();
+  if (!draftBody) {
+    useAlert('Nội dung bản nháp không được để trống.');
+    return;
+  }
+
+  setAftercareDraftSaving(normalizedEnrollmentId, normalizedStepId, true);
+
+  try {
+    const response = await AiControlAPI.updateAftercareStepDraft({
+      enrollmentId: normalizedEnrollmentId,
+      stepId: normalizedStepId,
+      draftBody,
+    });
+    const payload =
+      response?.data && typeof response.data === 'object'
+        ? response.data.payload
+        : null;
+    if (payload && typeof payload === 'object') {
+      updateAftercareStepInState(normalizedEnrollmentId, payload);
+      setAftercareDraftEditValue(
+        normalizedEnrollmentId,
+        normalizedStepId,
+        payload.draft_body || draftBody
+      );
+    }
+    cancelAftercareDraftEdit(normalizedEnrollmentId, normalizedStepId);
+    useAlert('Đã lưu nội dung bản nháp.');
+  } catch (error) {
+    const message =
+      error?.response?.data?.detail ||
+      error?.response?.data?.error ||
+      'Không thể lưu nội dung bản nháp.';
+    useAlert(String(message));
+  } finally {
+    setAftercareDraftSaving(normalizedEnrollmentId, normalizedStepId, false);
+  }
+};
+
+const retryAftercareStep = async (enrollmentId, stepId) => {
+  const normalizedEnrollmentId = String(enrollmentId || '').trim();
+  const normalizedStepId = String(stepId || '').trim();
+  if (!normalizedEnrollmentId || !normalizedStepId) return;
+
+  setAftercareStepRetrying(normalizedStepId, true);
+
+  try {
+    const response = await AiControlAPI.retryAftercareStep({
+      enrollmentId: normalizedEnrollmentId,
+      stepId: normalizedStepId,
+    });
+    const payload =
+      response?.data && typeof response.data === 'object'
+        ? response.data.payload
+        : null;
+    if (payload && typeof payload === 'object') {
+      updateAftercareStepInState(normalizedEnrollmentId, payload);
+    }
+    useAlert('Đã đưa bước tư vấn sau mua vào hàng chờ gửi lại.');
+  } catch (error) {
+    const message =
+      error?.response?.data?.detail ||
+      error?.response?.data?.error ||
+      'Không thể gửi lại bước tư vấn sau mua.';
+    useAlert(String(message));
+  } finally {
+    setAftercareStepRetrying(normalizedStepId, false);
+  }
+};
+
+const cancelAftercareEnrollment = async enrollmentId => {
+  const normalizedEnrollmentId = String(enrollmentId || '').trim();
+  if (!normalizedEnrollmentId) return;
+
+  setAftercareEnrollmentCancelling(normalizedEnrollmentId, true);
+
+  try {
+    const response = await AiControlAPI.cancelAftercareEnrollment({
+      enrollmentId: normalizedEnrollmentId,
+    });
+    const payload =
+      response?.data && typeof response.data === 'object'
+        ? response.data.payload
+        : null;
+    if (payload && typeof payload === 'object') {
+      updateAftercareEnrollmentInState(payload);
+    }
+    useAlert('Đã hủy kế hoạch tư vấn sau mua.');
+  } catch (error) {
+    const message =
+      error?.response?.data?.detail ||
+      error?.response?.data?.error ||
+      'Không thể hủy kế hoạch tư vấn sau mua.';
+    useAlert(String(message));
+  } finally {
+    setAftercareEnrollmentCancelling(normalizedEnrollmentId, false);
+  }
+};
+
+const pauseAftercareEnrollment = async enrollmentId => {
+  const normalizedEnrollmentId = String(enrollmentId || '').trim();
+  if (!normalizedEnrollmentId) return;
+
+  setAftercareEnrollmentTransitioning(normalizedEnrollmentId, true);
+
+  try {
+    const response = await AiControlAPI.pauseAftercareEnrollment({
+      enrollmentId: normalizedEnrollmentId,
+    });
+    const payload =
+      response?.data && typeof response.data === 'object'
+        ? response.data.payload
+        : null;
+    if (payload && typeof payload === 'object') {
+      updateAftercareEnrollmentInState(payload);
+    }
+    useAlert('Đã tạm dừng kế hoạch tư vấn sau mua.');
+  } catch (error) {
+    const message =
+      error?.response?.data?.detail ||
+      error?.response?.data?.error ||
+      'Không thể tạm dừng kế hoạch tư vấn sau mua.';
+    useAlert(String(message));
+  } finally {
+    setAftercareEnrollmentTransitioning(normalizedEnrollmentId, false);
+  }
+};
+
+const resumeAftercareEnrollment = async enrollmentId => {
+  const normalizedEnrollmentId = String(enrollmentId || '').trim();
+  if (!normalizedEnrollmentId) return;
+
+  setAftercareEnrollmentTransitioning(normalizedEnrollmentId, true);
+
+  try {
+    const response = await AiControlAPI.resumeAftercareEnrollment({
+      enrollmentId: normalizedEnrollmentId,
+    });
+    const payload =
+      response?.data && typeof response.data === 'object'
+        ? response.data.payload
+        : null;
+    if (payload && typeof payload === 'object') {
+      updateAftercareEnrollmentInState(payload);
+    }
+    useAlert('Đã tiếp tục kế hoạch tư vấn sau mua.');
+  } catch (error) {
+    const message =
+      error?.response?.data?.detail ||
+      error?.response?.data?.error ||
+      'Không thể tiếp tục kế hoạch tư vấn sau mua.';
+    useAlert(String(message));
+  } finally {
+    setAftercareEnrollmentTransitioning(normalizedEnrollmentId, false);
+  }
+};
+
+const aftercareStatusText = value => {
+  const key = String(value || '').trim();
+  const labels = {
+    draft: 'Bản nháp',
+    pending_optin: 'Chờ Gmail sẵn sàng',
+    active: 'Đang hoạt động',
+    paused: 'Tạm dừng',
+    blocked_outside_window: 'Bị chặn do ngoài cửa sổ gửi',
+    blocked_capability_disabled: 'Bị chặn do Gmail chưa sẵn sàng',
+    completed: 'Hoàn tất',
+    cancelled: 'Đã hủy',
+    expired: 'Hết hạn',
+  };
+  return labels[key] || key || '—';
+};
+
+const aftercareOptInText = value => {
+  const key = String(value || '').trim();
+  const labels = {
+    not_requested: 'Chưa kiểm tra',
+    requested: 'Đang chuẩn bị Gmail',
+    subscribed: 'Gmail sẵn sàng',
+    reoptin_required: 'Cần kích hoạt lại',
+    expired: 'Hết hạn',
+    revoked: 'Đã tắt',
+    unsupported_channel_capability: 'Gmail chưa sẵn sàng',
+  };
+  return labels[key] || key || '—';
+};
+
+const aftercareCapabilityStatusText = value => {
+  const key = String(value || '').trim();
+  const labels = {
+    supported: 'Đã sẵn sàng',
+    disabled: 'Đang tắt',
+    unsupported: 'Chưa hỗ trợ',
+    permission_required: 'Thiếu quyền',
+    reauthorization_required: 'Cần kết nối lại hộp thư',
+    email_missing: 'Thiếu email khách',
+    smtp_not_configured: 'SMTP/Gmail chưa cấu hình',
+  };
+  return labels[key] || key || '—';
+};
+
+const aftercareOptInWarningText = enrollment => {
+  const item = enrollment || {};
+  const subscription = item?.opt_in_subscription || {};
+
+  if (item?.reauthorization_required) {
+    return 'Hộp thư cần kết nối lại trước khi gửi ngoài 24 giờ.';
+  }
+
+  if (String(subscription?.status || '').trim() === 'expired') {
+    return 'Kết nối Gmail cho tư vấn sau mua đã hết hạn.';
+  }
+
+  const capabilityStatus = String(subscription?.capability_status || '').trim();
+  if (capabilityStatus && capabilityStatus !== 'supported') {
+    return `Gmail: ${aftercareCapabilityStatusText(capabilityStatus)}.`;
+  }
+
+  return String(item?.last_error || subscription?.last_error || '').trim();
+};
+
+const aftercareNextSendText = enrollment => {
+  const rows = Array.isArray(enrollment?.steps) ? enrollment.steps : [];
+  const nextStep = rows
+    .filter(step => step?.enabled !== false && step?.scheduled_for)
+    .sort((a, b) => new Date(a.scheduled_for) - new Date(b.scheduled_for))[0];
+
+  return formatIsoDateTime(nextStep?.scheduled_for) || '—';
+};
+
+const AFTERCARE_DRAFT_PREVIEW_LIMIT = 110;
+
+const normalizeAftercareDraftBody = value => {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+};
+
+const aftercareDraftPreviewText = value => {
+  const normalized = normalizeAftercareDraftBody(value);
+  if (!normalized) return '';
+  if (normalized.length <= AFTERCARE_DRAFT_PREVIEW_LIMIT) {
+    return normalized;
+  }
+  return `${normalized.slice(0, AFTERCARE_DRAFT_PREVIEW_LIMIT).trimEnd()}...`;
+};
+
 const runFaqTraining = async () => {
   const days = Number(faqTrainingDays.value || 0);
   if (!Number.isFinite(days) || days < 1 || days > 365) {
@@ -2048,6 +2679,9 @@ watch(activeMainTab, async (tab) => {
   if (tab === 'comment') {
     await fetchCommentQueue();
   }
+  if (tab === 'aftercare') {
+    await fetchAftercareEnrollments();
+  }
 });
 
 watch([trackedLabelRows, aiGrowthSeries], () => {
@@ -2147,6 +2781,19 @@ onBeforeUnmount(() => {
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               <span>Comment</span>
+            </button>
+            <button
+              data-test-id="ai-control-tab-aftercare"
+              class="flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold transition-all duration-200"
+              :class="
+                activeMainTab === 'aftercare'
+                  ? 'bg-n-background text-n-violet-11 shadow ring-1 ring-n-violet-4/50'
+                  : 'text-n-slate-11 hover:text-n-slate-12 hover:bg-n-slate-3/50'
+              "
+              @click="activeMainTab = 'aftercare'"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M2 12h20"/></svg>
+              <span>Tư vấn sau mua</span>
             </button>
           </div>
         </div>
@@ -2669,6 +3316,15 @@ onBeforeUnmount(() => {
                         @click="fetchCustomer360(aiControlConversationId)"
                       />
                     </div>
+                    <Button
+                      v-if="hasSelectedConversation"
+                      data-test-id="aftercare-open-dialog"
+                      color="blue"
+                      size="sm"
+                      class="mt-3 h-9 w-full"
+                      label="Tư vấn sau mua"
+                      @click="openAftercareDialog"
+                    />
                   </div>
 
                   <div class="p-5 flex flex-col gap-4">
@@ -2963,6 +3619,316 @@ onBeforeUnmount(() => {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="activeMainTab === 'aftercare'">
+          <div class="flex flex-col gap-6">
+            <div class="rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm overflow-hidden">
+              <div class="px-6 py-5 border-b border-n-slate-3 bg-n-solid-2">
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <div class="text-lg font-semibold tracking-tight text-n-slate-12">
+                      Tư vấn sau mua
+                    </div>
+                    <div class="mt-1 text-sm text-n-slate-11/80">
+                      Theo dõi các kế hoạch tư vấn sau mua và trạng thái gửi Gmail ngoài 24 giờ trong Chatwoot.
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <Button
+                      v-if="hasSelectedConversation"
+                      color="blue"
+                      size="sm"
+                      class="h-9"
+                      label="Tạo từ hội thoại đang mở"
+                      @click="openAftercareDialog"
+                    />
+                    <Button
+                      color="slate"
+                      size="sm"
+                      class="h-9"
+                      :is-loading="isAftercareLoading"
+                      label="Làm mới"
+                      @click="fetchAftercareEnrollments"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div class="p-6 flex flex-col gap-4">
+                <div
+                  v-if="aftercareLastError"
+                  class="rounded-xl border border-n-ruby-4 bg-n-ruby-2 px-4 py-3 text-sm font-medium text-n-ruby-11"
+                >
+                  {{ aftercareLastError }}
+                </div>
+
+                <div
+                  v-else-if="isAftercareLoading"
+                  class="rounded-xl border border-dashed border-n-slate-4 px-4 py-10 text-center text-sm text-n-slate-11"
+                >
+                  Đang tải danh sách tư vấn sau mua...
+                </div>
+
+                <div
+                  v-else-if="!aftercareEnrollments.length"
+                  class="rounded-xl border border-dashed border-n-slate-4 px-4 py-10 text-center text-sm text-n-slate-11"
+                >
+                  Chưa có kế hoạch nào. Chọn một hội thoại rồi bấm `Tư vấn sau mua` để tạo kế hoạch đầu tiên.
+                </div>
+
+                <div v-else class="overflow-x-auto">
+                  <table class="min-w-full divide-y divide-n-slate-3">
+                    <thead class="bg-n-solid-2/50">
+                      <tr class="text-left text-xs font-semibold uppercase tracking-wider text-n-slate-11">
+                        <th class="px-4 py-3">Khách hàng</th>
+                        <th class="px-4 py-3">Chuỗi chăm sóc</th>
+                        <th class="px-4 py-3">Trạng thái kế hoạch</th>
+                        <th class="px-4 py-3">Trạng thái Gmail</th>
+                        <th class="px-4 py-3">Lần gửi kế tiếp</th>
+                        <th class="px-4 py-3">Bản nháp</th>
+                        <th class="px-4 py-3">Hành động</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-n-slate-3 bg-n-solid-1">
+                      <tr
+                        v-for="item in aftercareEnrollments"
+                        :key="`aftercare-enrollment-${item.id}`"
+                        class="cursor-pointer transition-colors hover:bg-n-slate-2/50"
+                        @click="openAiControlConversation(item.conversation?.id || item.conversation_id || 0)"
+                      >
+                        <td class="px-4 py-4 text-sm text-n-slate-12">
+                          <div class="font-semibold">{{ item.contact?.name || 'Khách hàng' }}</div>
+                          <div class="mt-1 text-xs text-n-slate-11">
+                            #{{ item.conversation?.display_id || item.conversation_id || '—' }}
+                          </div>
+                        </td>
+                        <td class="px-4 py-4 text-sm text-n-slate-12">
+                          {{ item.sequence?.name || item.aftercare_sequence?.name || '—' }}
+                        </td>
+                        <td class="px-4 py-4 text-sm text-n-slate-12">
+                          {{ aftercareStatusText(item.status) }}
+                        </td>
+                        <td class="px-4 py-4 text-sm text-n-slate-12">
+                          <div>{{ aftercareOptInText(item.opt_in_subscription?.status) }}</div>
+                          <div
+                            v-if="aftercareOptInWarningText(item)"
+                            class="mt-1 text-xs leading-5 text-n-ruby-11"
+                          >
+                            {{ aftercareOptInWarningText(item) }}
+                          </div>
+                        </td>
+                        <td class="px-4 py-4 text-sm text-n-slate-12">
+                          {{ aftercareNextSendText(item) }}
+                        </td>
+                        <td class="px-4 py-4 text-sm text-n-slate-12 align-top">
+                          <div class="flex flex-col gap-3 min-w-[280px]">
+                            <div
+                              v-for="step in item.steps || []"
+                              :key="`aftercare-draft-${item.id}-${step.id || step.position}`"
+                              class="rounded-xl border border-n-slate-3 bg-n-solid-2/40 px-3 py-2"
+                            >
+                              <div class="flex items-center justify-between gap-3">
+                                <div class="text-xs font-semibold text-n-slate-12">
+                                  B{{ step.position || '—' }} · {{ step.title || 'Bước' }}
+                                </div>
+                                <div class="text-right text-[11px] text-n-slate-10">
+                                  <div>{{ aftercareDraftStatusText(step.draft_status) }}</div>
+                                  <div class="mt-0.5">{{ aftercareStepStatusText(step.status) }}</div>
+                                </div>
+                              </div>
+                              <div
+                                v-if="isAftercareDraftEditing(item.id, step.id)"
+                                class="mt-2"
+                              >
+                                <textarea
+                                  :data-test-id="`aftercare-edit-input-${item.id}-${step.id}`"
+                                  class="min-h-[92px] w-full rounded-lg border border-n-slate-4 bg-white px-3 py-2 text-xs leading-5 text-n-slate-12 outline-none transition focus:border-n-blue-6"
+                                  :value="getAftercareDraftEditValue(item.id, step.id)"
+                                  @click.stop
+                                  @input="
+                                    setAftercareDraftEditValue(
+                                      item.id,
+                                      step.id,
+                                      $event.target.value
+                                    )
+                                  "
+                                />
+                                <div class="mt-2 flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    class="rounded-lg border border-n-blue-4 bg-n-blue-2 px-3 py-1.5 text-xs font-semibold text-n-blue-11 transition hover:bg-n-blue-3 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :data-test-id="`aftercare-edit-save-${item.id}-${step.id}`"
+                                    :disabled="isAftercareDraftSaving(item.id, step.id)"
+                                    @click.stop="saveAftercareDraftEdit(item.id, step.id)"
+                                  >
+                                    {{
+                                      isAftercareDraftSaving(item.id, step.id)
+                                        ? 'Đang lưu...'
+                                        : 'Lưu nội dung'
+                                    }}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="rounded-lg border border-n-slate-4 bg-n-solid-2 px-3 py-1.5 text-xs font-semibold text-n-slate-11 transition hover:bg-n-slate-2"
+                                    :data-test-id="`aftercare-edit-cancel-${item.id}-${step.id}`"
+                                    :disabled="isAftercareDraftSaving(item.id, step.id)"
+                                    @click.stop="cancelAftercareDraftEdit(item.id, step.id)"
+                                  >
+                                    Hủy
+                                  </button>
+                                </div>
+                              </div>
+                              <div
+                                v-else-if="step.draft_body"
+                                :data-test-id="`aftercare-draft-preview-${item.id}-${step.id}`"
+                                :title="step.draft_body"
+                                class="mt-2 block max-w-[320px] truncate text-xs leading-5 text-n-slate-12"
+                              >
+                                {{ aftercareDraftPreviewText(step.draft_body) }}
+                              </div>
+                              <div
+                                v-else-if="step.draft_error"
+                                class="mt-2 text-xs leading-5 text-n-ruby-11"
+                              >
+                                {{ step.draft_error }}
+                              </div>
+                              <div
+                                v-else
+                                class="mt-2 text-xs leading-5 text-n-slate-10"
+                              >
+                                Chưa có bản xem trước của bản nháp.
+                              </div>
+                              <div
+                                v-if="step.latest_dispatch_log"
+                                class="mt-2 text-[11px] leading-5 text-n-slate-10"
+                              >
+                                Gửi gần nhất:
+                                {{ aftercareDispatchStatusText(step.latest_dispatch_log.status) }}
+                                <span v-if="step.latest_dispatch_log.sent_at">
+                                  · {{ formatIsoDateTime(step.latest_dispatch_log.sent_at) }}
+                                </span>
+                                <span v-else-if="step.latest_dispatch_log.error_message">
+                                  · {{ step.latest_dispatch_log.error_message }}
+                                </span>
+                              </div>
+                              <div
+                                v-if="step.last_error"
+                                class="mt-2 text-xs leading-5 text-n-ruby-11"
+                              >
+                                {{ step.last_error }}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td class="px-4 py-4 text-sm text-n-slate-12 align-top">
+                          <div class="flex min-w-[160px] flex-col gap-2">
+                            <button
+                              v-if="String(item.status || '').trim() === 'active'"
+                              type="button"
+                              class="rounded-lg border border-n-amber-4 bg-n-amber-2 px-3 py-2 text-left text-xs font-semibold text-n-amber-11 transition hover:bg-n-amber-3 disabled:cursor-not-allowed disabled:opacity-60"
+                              :data-test-id="`aftercare-pause-${item.id}`"
+                              :disabled="isAftercareEnrollmentTransitioning(item.id)"
+                              @click.stop="pauseAftercareEnrollment(item.id)"
+                            >
+                              {{
+                                isAftercareEnrollmentTransitioning(item.id)
+                                  ? 'Đang tạm dừng...'
+                                  : 'Tạm dừng kế hoạch'
+                              }}
+                            </button>
+                            <button
+                              v-if="String(item.status || '').trim() === 'paused'"
+                              type="button"
+                              class="rounded-lg border border-n-teal-4 bg-n-teal-2 px-3 py-2 text-left text-xs font-semibold text-n-teal-11 transition hover:bg-n-teal-3 disabled:cursor-not-allowed disabled:opacity-60"
+                              :data-test-id="`aftercare-resume-${item.id}`"
+                              :disabled="isAftercareEnrollmentTransitioning(item.id)"
+                              @click.stop="resumeAftercareEnrollment(item.id)"
+                            >
+                              {{
+                                isAftercareEnrollmentTransitioning(item.id)
+                                  ? 'Đang tiếp tục...'
+                                  : 'Tiếp tục kế hoạch'
+                              }}
+                            </button>
+                            <button
+                              type="button"
+                              class="rounded-lg border border-n-ruby-4 bg-n-ruby-2 px-3 py-2 text-left text-xs font-semibold text-n-ruby-11 transition hover:bg-n-ruby-3 disabled:cursor-not-allowed disabled:opacity-60"
+                              :data-test-id="`aftercare-cancel-${item.id}`"
+                              :disabled="
+                                isAftercareEnrollmentCancelling(item.id) ||
+                                ['cancelled', 'completed'].includes(String(item.status || '').trim())
+                              "
+                              @click.stop="cancelAftercareEnrollment(item.id)"
+                            >
+                              {{
+                                isAftercareEnrollmentCancelling(item.id)
+                                  ? 'Đang hủy kế hoạch...'
+                                  : 'Hủy kế hoạch'
+                              }}
+                            </button>
+                            <button
+                              v-for="step in item.steps || []"
+                              :key="`aftercare-edit-${item.id}-${step.id || step.position}`"
+                              type="button"
+                              class="rounded-lg border border-n-blue-4 bg-n-blue-2 px-3 py-2 text-left text-xs font-semibold text-n-blue-11 transition hover:bg-n-blue-3 disabled:cursor-not-allowed disabled:opacity-60"
+                              :data-test-id="`aftercare-edit-${item.id}-${step.id}`"
+                              :disabled="
+                                isAftercareDraftSaving(item.id, step.id) ||
+                                isAftercareStepRefreshing(step.id)
+                              "
+                              @click.stop="startAftercareDraftEdit(item.id, step)"
+                            >
+                              {{
+                                isAftercareDraftEditing(item.id, step.id)
+                                  ? `Đang sửa B${step.position || ''}`
+                                  : `Sửa nội dung B${step.position || ''}`
+                              }}
+                            </button>
+                            <button
+                              v-for="step in item.steps || []"
+                              :key="`aftercare-regenerate-${item.id}-${step.id || step.position}`"
+                              type="button"
+                              class="rounded-lg border border-n-slate-4 bg-n-solid-2 px-3 py-2 text-left text-xs font-semibold text-n-slate-12 transition hover:bg-n-slate-2 disabled:cursor-not-allowed disabled:opacity-60"
+                              :data-test-id="`aftercare-regenerate-${item.id}-${step.id}`"
+                              :disabled="
+                                isAftercareStepRefreshing(step.id) ||
+                                isAftercareDraftSaving(item.id, step.id)
+                              "
+                              @click.stop="regenerateAftercareDraft(item.id, step.id)"
+                            >
+                              {{
+                                isAftercareStepRefreshing(step.id)
+                                  ? 'Đang tạo lại bản nháp...'
+                                  : `Tạo lại bản nháp B${step.position || ''}`
+                              }}
+                            </button>
+                            <button
+                              v-for="step in (item.steps || []).filter(
+                                row => String(row?.status || '').trim() === 'failed'
+                              )"
+                              :key="`aftercare-retry-${item.id}-${step.id || step.position}`"
+                              type="button"
+                              class="rounded-lg border border-n-amber-4 bg-n-amber-2 px-3 py-2 text-left text-xs font-semibold text-n-amber-11 transition hover:bg-n-amber-3 disabled:cursor-not-allowed disabled:opacity-60"
+                              :data-test-id="`aftercare-retry-${item.id}-${step.id}`"
+                              :disabled="isAftercareStepRetrying(step.id)"
+                              @click.stop="retryAftercareStep(item.id, step.id)"
+                            >
+                              {{
+                                isAftercareStepRetrying(step.id)
+                                  ? 'Đang xếp hàng gửi lại...'
+                                  : `Gửi lại B${step.position || ''}`
+                              }}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -3525,6 +4491,19 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </woot-modal>
+
+    <AftercareEnrollmentDialog
+      :show="showAftercareDialog"
+      :conversation-id="aiControlConversationId"
+      :conversation-label="selectedAftercareConversationLabel"
+      :contact-email="selectedAftercareContactEmail"
+      :sequences="aftercareSequences"
+      :eligibility="aftercareEligibility"
+      :is-loading="isAftercareDialogLoading"
+      :is-submitting="isAftercareSubmitting"
+      @update:show="showAftercareDialog = $event"
+      @submit="submitAftercareEnrollment"
+    />
 
     <!-- Delete Label Confirmation Modal -->
     <woot-delete-modal

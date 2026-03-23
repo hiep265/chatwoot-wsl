@@ -38,6 +38,11 @@ Rails.application.reloader.to_prepare do
     Webhooks::FacebookDeliveryJob.perform_later(read.to_json)
   end
 
+  Facebook::Messenger::Bot.on :optin do |optin|
+    Rails.logger.info "Recieved opt-in webhook #{optin.to_json}"
+    Webhooks::FacebookOptInJob.perform_later(optin.to_json)
+  end
+
   Facebook::Messenger::Bot.on :message_echo do |message|
     # Add delay to prevent race condition where echo arrives before send message API completes
     # This avoids duplicate messages when echo comes early during API processing

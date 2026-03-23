@@ -202,6 +202,72 @@ describe Webhooks::InstagramEventsJob do
         instagram_webhook.perform_now(messaging_seen_event[:entry])
       end
 
+      it 'routes notification opt-in callbacks into the aftercare Meta opt-in processor' do
+        contact = create(:contact, account: account)
+        contact_inbox = create(
+          :contact_inbox,
+          contact: contact,
+          inbox: instagram_messenger_inbox,
+          source_id: 'ig-contact-123'
+        )
+        conversation = create(
+          :conversation,
+          account: account,
+          inbox: instagram_messenger_inbox,
+          contact: contact,
+          contact_inbox: contact_inbox,
+          additional_attributes: { type: 'instagram_direct_message' }
+        )
+        enrollment = create(
+          :aftercare_enrollment,
+          account: account,
+          conversation: conversation,
+          contact: contact,
+          inbox: instagram_messenger_inbox,
+          created_by: create(:user, account: account, role: :administrator),
+          status: :pending_optin,
+          channel_key: 'instagram'
+        )
+        subscription = create(
+          :aftercare_opt_in_subscription,
+          aftercare_enrollment: enrollment,
+          status: :requested,
+          provider: 'meta',
+          capability_status: 'supported'
+        )
+
+        optin_event = [
+          {
+            id: instagram_messenger_channel.instagram_id,
+            messaging: [
+              {
+                sender: { id: contact_inbox.source_id },
+                recipient: { id: instagram_messenger_channel.instagram_id },
+                timestamp: Time.current.to_i,
+                optin: {
+                  type: 'notification_messages',
+                  payload: {
+                    account_id: account.id,
+                    conversation_id: conversation.id,
+                    aftercare_enrollment_id: enrollment.id,
+                    aftercare_subscription_id: subscription.id,
+                    topic: subscription.topic
+                  }.to_json,
+                  notification_messages_token: 'ig-notification-token-123',
+                  token_expiry_timestamp: 30.days.from_now.to_i
+                }
+              }
+            ]
+          }
+        ]
+
+        instagram_webhook.perform_now(optin_event)
+
+        expect(subscription.reload.status).to eq('subscribed')
+        expect(subscription.token_ref).to eq('ig-notification-token-123')
+        expect(enrollment.reload.status).to eq('active')
+      end
+
       it 'handles unsupported message' do
         unsupported_event = build(:instagram_message_unsupported_event).with_indifferent_access
         sender_id = unsupported_event[:entry][0][:messaging][0][:sender][:id]

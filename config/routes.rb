@@ -115,6 +115,20 @@ Rails.application.routes.draw do
           get 'ai_control/comments/:conversation_id/thread', to: 'ai_control#comment_thread'
           post 'ai_control/comments/:conversation_id/reply', to: 'ai_control#reply_comment'
           post 'ai_control/comments/:conversation_id/auto_reply', to: 'ai_control#auto_reply_comment'
+          namespace :aftercare do
+            resources :sequences, only: [:index]
+            resource :eligibility, only: [:show], controller: :eligibility
+            resources :enrollments, only: [:index, :show, :create] do
+              post :cancel, on: :member
+              post :pause, on: :member
+              post :resume, on: :member
+              resources :steps, only: [:update], controller: :enrollment_steps do
+                post :regenerate_draft, on: :member
+                post :retry, on: :member
+              end
+            end
+            resources :opt_in_events, only: [:create]
+          end
           resource :saml_settings, only: [:show, :create, :update, :destroy]
           resources :agent_bots, only: [:index, :create, :show, :update, :destroy] do
             delete :avatar, on: :member

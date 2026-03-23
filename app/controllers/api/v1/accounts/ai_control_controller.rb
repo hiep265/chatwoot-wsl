@@ -695,7 +695,7 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
   end
 
   def chatbotlevan_base_url
-    ENV.fetch('CHATBOTLEVAN_BASE_URL', '').to_s.strip.chomp('/')
+    ChatbotlevanEndpointResolver.chatbotlevan_base_url
   end
 
   def chatbotlevan_comment_webhook_url

@@ -47,6 +47,7 @@ RSpec.describe AiControl::CommentWebhookDispatchService do
     it 'falls back to CHATBOTLEVAN_COMMENT_WEBHOOK_URL' do
       with_modified_env(
         'CHATBOTLEVAN_COMMENT_WEBHOOK_URL' => 'https://env.local/webhooks/chatwoot/comments',
+        'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
         'CHATBOTLEVAN_BASE_URL' => ''
       ) do
         expect(WebhookJob).to receive(:perform_later).with(
@@ -61,6 +62,7 @@ RSpec.describe AiControl::CommentWebhookDispatchService do
     it 'falls back to CHATBOTLEVAN_BASE_URL when specific comment webhook env is empty' do
       with_modified_env(
         'CHATBOTLEVAN_COMMENT_WEBHOOK_URL' => '',
+        'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
         'CHATBOTLEVAN_BASE_URL' => 'https://base.local'
       ) do
         expect(WebhookJob).to receive(:perform_later).with(
@@ -75,6 +77,7 @@ RSpec.describe AiControl::CommentWebhookDispatchService do
     it 'skips dispatch when no webhook url can be resolved' do
       with_modified_env(
         'CHATBOTLEVAN_COMMENT_WEBHOOK_URL' => '',
+        'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
         'CHATBOTLEVAN_BASE_URL' => ''
       ) do
         expect(WebhookJob).not_to receive(:perform_later)
