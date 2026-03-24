@@ -3725,7 +3725,10 @@ onBeforeUnmount(() => {
                         <td class="px-4 py-4 text-sm text-n-slate-12">
                           {{ aftercareNextSendText(item) }}
                         </td>
-                        <td class="px-4 py-4 text-sm text-n-slate-12 align-top">
+                        <td
+                          class="px-4 py-4 text-sm text-n-slate-12 align-top"
+                          @click.stop
+                        >
                           <div class="flex flex-col gap-3 min-w-[280px]">
                             <div
                               v-for="step in item.steps || []"

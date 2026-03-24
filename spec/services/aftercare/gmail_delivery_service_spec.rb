@@ -22,24 +22,24 @@ RSpec.describe Aftercare::GmailDeliveryService do
     )
   end
 
-  let(:mailer_context) { instance_double(ConversationReplyMailer) }
+  let(:mailer_context) { instance_double(AftercareMailer) }
   let(:delivery) { instance_double(ActionMailer::MessageDelivery) }
   let(:mail_message) { instance_double(Mail::Message, message_id: '<aftercare-gmail-123@example.com>') }
 
   before do
     allow(Facebook::Messenger::Subscriptions).to receive(:subscribe).and_return(true)
     allow(Facebook::Messenger::Subscriptions).to receive(:unsubscribe).and_return(true)
-    allow(ConversationReplyMailer).to receive(:with).with(account: account).and_return(mailer_context)
-    allow(mailer_context).to receive(:email_reply).with(message).and_return(delivery)
+    allow(AftercareMailer).to receive(:with).with(account: account).and_return(mailer_context)
+    allow(mailer_context).to receive(:step_email).with(message).and_return(delivery)
   end
 
-  it 'sends the aftercare message through ConversationReplyMailer and stores the email message id' do
+  it 'sends the aftercare message through AftercareMailer and stores the email message id' do
     allow(delivery).to receive(:deliver_now).and_return(mail_message)
 
     described_class.new(message: message).perform
 
-    expect(ConversationReplyMailer).to have_received(:with).with(account: account)
-    expect(mailer_context).to have_received(:email_reply).with(message)
+    expect(AftercareMailer).to have_received(:with).with(account: account)
+    expect(mailer_context).to have_received(:step_email).with(message)
     expect(delivery).to have_received(:deliver_now)
     expect(message.reload.source_id).to eq('<aftercare-gmail-123@example.com>')
   end

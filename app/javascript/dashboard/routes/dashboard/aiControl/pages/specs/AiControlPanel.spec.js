@@ -836,4 +836,19 @@ describe('AiControlPanel', () => {
       'Đồng thời gợi ý phản hồi nếu khách chưa thấy tài liệu trong hộp thư.'
     );
   });
+
+  it('keeps the user in the aftercare tab when clicking the draft preview', async () => {
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-aftercare"]').trigger('click');
+    await flushPromises();
+
+    await wrapper
+      .find('[data-test-id="aftercare-draft-preview-91-501"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(wrapper.vm.activeMainTab).toBe('aftercare');
+    expect(mockRouter.push).not.toHaveBeenCalled();
+  });
 });

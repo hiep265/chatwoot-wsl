@@ -7,7 +7,7 @@ module Aftercare
     def perform
       raise ArgumentError, 'Aftercare Gmail delivery requires a contact email' if contact_email.blank?
 
-      reply_mail = ConversationReplyMailer.with(account: @message.account).email_reply(@message).deliver_now
+      reply_mail = AftercareMailer.with(account: @message.account).step_email(@message).deliver_now
       return if reply_mail.blank?
 
       @message.update!(source_id: reply_mail.message_id)
