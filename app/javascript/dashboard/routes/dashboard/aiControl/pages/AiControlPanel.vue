@@ -130,10 +130,11 @@ const closeMetadataModal = () => {
   selectedMetadataItem.value = null;
 };
 
-// Chỉ dùng ai_handoff để đánh dấu cả chuyển nhân viên và dừng AI
+// Queue "Đang chờ nhân viên phản hồi" bám theo label handoff từ Chatwoot
 const HANDOFF_LABEL = 'ai_handoff';
 const BOOKING_CONFIRMED_LABEL = 'ý_định_đặt_lịch_xác_nhận';
 const LABEL_ALIASES = {
+  handoff: HANDOFF_LABEL,
   fai_handoff: HANDOFF_LABEL,
   intent_booking_confirmed: BOOKING_CONFIRMED_LABEL,
   ai_upset: 'cảm_xúc_tiêu_cực',
@@ -3006,7 +3007,7 @@ onBeforeUnmount(() => {
                       Đang chờ nhân viên phản hồi
                     </div>
                     <div class="text-sm font-medium text-n-slate-11/80">
-                      Chỉ giữ lại các hội thoại có nhãn `ai_handoff` và chưa có phản hồi công khai mới sau khi chuyển cho nhân viên.
+                      Chỉ giữ lại các hội thoại có nhãn `handoff` và chưa có phản hồi công khai mới sau khi chuyển cho nhân viên.
                     </div>
                   </div>
                   <Button
@@ -3045,7 +3046,7 @@ onBeforeUnmount(() => {
                     Danh sách đang chờ phản hồi
                   </div>
                   <div class="mt-1 text-xs text-n-slate-11">
-                    Chỉ hiển thị các hội thoại còn nhãn `ai_handoff` và tin nhắn khách gần nhất chưa có phản hồi công khai mới hơn.
+                    Chỉ hiển thị các hội thoại còn nhãn `handoff` và tin nhắn khách gần nhất chưa có phản hồi công khai mới hơn.
                   </div>
 
                   <div

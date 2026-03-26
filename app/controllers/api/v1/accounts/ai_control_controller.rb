@@ -4,6 +4,10 @@ require 'json'
 
 class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
   BOT_ACCESSIBLE_ACTIONS = %w[manager_daily_raw_messages manager_conversation_messages].freeze
+  AI_HANDOFF_LABELS = %w[handoff].freeze
+  AI_HANDOFF_TOPIC_LABEL_EXCLUSIONS = (
+    AI_HANDOFF_LABELS + %w[ai_urgent ai_upset ai_lead ai_lead_high ai_lead_medium ai_lead_low]
+  ).freeze
 
   before_action :authorize_account_update
 
@@ -299,17 +303,33 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
   end
 
   def manager_ai_handoff_queue
-    proxy_chatbotlevan_manager_get(
-      path: '/tools/staff/ai-handoff-queue',
-      payload: {
-        account_id: Current.account.id.to_s,
-        timezone_name: normalize_timezone_name(params[:timezone_name]),
-        limit: normalize_limit(params[:limit]),
-        max_conversations: normalize_optional_int(params[:max_conversations])
-      },
-      failure_message: 'AI handoff queue request failed',
-      enricher: :enrich_manager_rows
+    limit = normalize_limit(params[:limit])
+    max_conversations = normalize_optional_int(params[:max_conversations])
+    query_limit = [limit, max_conversations || limit].max
+
+    conversations = Current.account.conversations
+                           .includes(:contact)
+                           .tagged_with(AI_HANDOFF_LABELS, any: true)
+                           .where.not(status: Conversation.statuses[:resolved])
+                           .reorder(last_activity_at: :desc, id: :desc)
+                           .limit([query_limit, 500].min)
+                           .to_a
+
+    items = build_manager_ai_handoff_items(conversations)
+    render json: {
+      ok: true,
+      items: items.first(limit),
+      total: items.length,
+      fetched_at: Time.current.utc.iso8601
+    }, status: :ok
+  rescue StandardError => e
+    Rails.logger.error(
+      "[AiControl] manager_ai_handoff_queue_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}"
     )
+    render json: {
+      error: 'AI handoff queue request failed',
+      detail: e.message
+    }, status: :internal_server_error
   end
 
   def manager_sla_risk_queue
@@ -1111,5 +1131,213 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     return "Contact ##{fallback}" if fallback.present?
 
     'Khách hàng'
+  end
+
+  def build_manager_ai_handoff_items(conversations)
+    return [] if conversations.blank?
+
+    conversation_ids = conversations.map(&:id)
+    last_customer_messages = latest_incoming_messages_by_conversation(conversation_ids)
+    last_public_human_replies = latest_public_human_replies_by_conversation(conversation_ids)
+
+    conversations.filter_map do |conversation|
+      conversation_key = conversation.id.to_s
+      last_customer_message = last_customer_messages[conversation_key]
+      last_public_human_reply = last_public_human_replies[conversation_key]
+      waiting_reference_at = extract_handoff_waiting_reference_time(
+        conversation,
+        last_customer_message
+      )
+
+      if last_public_human_reply.present? &&
+         (waiting_reference_at.blank? || last_public_human_reply.created_at > waiting_reference_at)
+        next
+      end
+
+      serialize_manager_ai_handoff_item(
+        conversation: conversation,
+        last_customer_message: last_customer_message,
+        waiting_reference_at: waiting_reference_at
+      )
+    end.sort_by do |item|
+      [
+        -(item[:waiting_minutes] || 0).to_i,
+        -(safe_time_parse(item[:last_customer_message_at])&.to_i || 0),
+        -item[:conversation_id].to_i
+      ]
+    end
+  end
+
+  def latest_incoming_messages_by_conversation(conversation_ids)
+    latest_message_records_by_conversation(
+      Message.where(
+        account_id: Current.account.id,
+        conversation_id: conversation_ids,
+        message_type: Message.message_types[:incoming],
+        private: false
+      )
+    )
+  end
+
+  def latest_public_human_replies_by_conversation(conversation_ids)
+    latest_message_records_by_conversation(
+      Message.where(
+        account_id: Current.account.id,
+        conversation_id: conversation_ids,
+        message_type: Message.message_types[:outgoing],
+        private: false
+      ).where(
+        <<~SQL.squish,
+          (
+            messages.sender_type = :user_sender_type
+            AND COALESCE(messages.content_attributes->>'automation_rule_id', '') = ''
+            AND COALESCE(messages.additional_attributes->>'campaign_id', '') = ''
+          )
+          OR (
+            messages.sender_id IS NULL
+            AND messages.source_id IS NOT NULL
+          )
+        SQL
+        user_sender_type: 'User'
+      )
+    )
+  end
+
+  def latest_message_records_by_conversation(scope)
+    scope
+      .select('DISTINCT ON (messages.conversation_id) messages.*')
+      .reorder(Arel.sql('messages.conversation_id, messages.created_at DESC, messages.id DESC'))
+      .index_by { |message| message.conversation_id.to_s }
+  end
+
+  def serialize_manager_ai_handoff_item(conversation:, last_customer_message:, waiting_reference_at:)
+    handoff_metadata = extract_handoff_metadata(conversation)
+
+    {
+      conversation_id: conversation.id.to_s,
+      conversation_display_id: conversation.display_id,
+      contact_id: conversation.contact_id.to_s,
+      contact_name: resolve_contact_name(conversation.contact, conversation.contact_id),
+      contact_avatar_url: conversation.contact&.avatar_url,
+      status: conversation.status,
+      priority: conversation.priority,
+      inbox_id: conversation.inbox_id.to_s,
+      assignee_id: conversation.assignee_id&.to_s,
+      labels: conversation.cached_label_list_array,
+      handoff_reason: extract_handoff_reason(conversation, handoff_metadata),
+      topic_guess: extract_handoff_topic_guess(conversation, handoff_metadata),
+      issue_summary: extract_handoff_issue_summary(handoff_metadata, last_customer_message),
+      last_customer_message: message_preview(last_customer_message),
+      last_customer_message_at: last_customer_message&.created_at&.utc&.iso8601,
+      waiting_since: waiting_reference_at&.utc&.iso8601,
+      waiting_minutes: waiting_minutes_since(waiting_reference_at)
+    }.compact
+  end
+
+  def extract_handoff_metadata(conversation)
+    attrs = conversation.custom_attributes
+    attrs = JSON.parse(attrs) if attrs.is_a?(String)
+    attrs = attrs.to_h if attrs.respond_to?(:to_h)
+    attrs = attrs.deep_stringify_keys if attrs.is_a?(Hash)
+
+    handoff_attrs = attrs.is_a?(Hash) ? attrs.dig('captain', 'handoff') : nil
+    handoff_attrs.is_a?(Hash) ? handoff_attrs : {}
+  rescue JSON::ParserError
+    {}
+  end
+
+  def extract_handoff_reason(conversation, handoff_metadata)
+    reason = handoff_metadata['reason'].to_s.strip
+    return reason if reason.present?
+
+    reason_label = conversation.cached_label_list_array.find do |label|
+      label.to_s.start_with?('handover_', 'lý_do_handoff_')
+    end
+    return reason_label if reason_label.present?
+
+    conversation.cached_label_list_array.find do |label|
+      AI_HANDOFF_LABELS.include?(label.to_s.downcase)
+    end || 'ai_handoff'
+  end
+
+  def extract_handoff_topic_guess(conversation, handoff_metadata)
+    labels = conversation.cached_label_list_array
+    topic_label = labels.find do |label|
+      normalized = label.to_s.downcase
+      next false if AI_HANDOFF_TOPIC_LABEL_EXCLUSIONS.include?(normalized)
+      next false if normalized.start_with?('handover_', 'lý_do_handoff_')
+
+      true
+    end
+    return humanize_queue_label(topic_label) if topic_label.present?
+
+    customer_request = handoff_metadata['customer_request'].to_s.strip
+    return customer_request.truncate(60) if customer_request.present?
+
+    nil
+  end
+
+  def extract_handoff_issue_summary(handoff_metadata, last_customer_message)
+    customer_request = handoff_metadata['customer_request'].to_s.strip
+    return customer_request if customer_request.present?
+
+    reason = handoff_metadata['reason'].to_s.strip
+    return reason if reason.present?
+
+    message_preview(last_customer_message)
+  end
+
+  def extract_handoff_waiting_reference_time(conversation, last_customer_message)
+    handoff_metadata = extract_handoff_metadata(conversation)
+    handoff_updated_at = safe_time_parse(handoff_metadata['updated_at'])
+    waiting_since = conversation.waiting_since
+    last_customer_at = last_customer_message&.created_at
+
+    [
+      waiting_since,
+      [handoff_updated_at, last_customer_at].compact.max,
+      conversation.last_activity_at,
+      conversation.updated_at
+    ].compact.first
+  end
+
+  def waiting_minutes_since(value)
+    return 0 unless value.present?
+
+    [((Time.current - value) / 60).floor, 0].max
+  end
+
+  def message_preview(message)
+    return nil unless message.present?
+
+    preview = message.content_for_llm.to_s.strip
+    preview = message.processed_message_content.to_s.strip if preview.blank?
+    preview = message.content.to_s.strip if preview.blank?
+    preview.presence&.truncate(240)
+  end
+
+  def humanize_queue_label(label)
+    raw = label.to_s.strip
+    return '' if raw.blank?
+
+    raw
+      .sub(/\Aly_do_handoff_/, '')
+      .sub(/\Alý_do_handoff_/, '')
+      .sub(/\Ahandover_/, '')
+      .sub(/\Aintent_/, '')
+      .sub(/\Ay_dinh_/, '')
+      .sub(/\Aý_định_/, '')
+      .tr('_', ' ')
+      .strip
+      .capitalize
+  end
+
+  def safe_time_parse(value)
+    raw = value.to_s.strip
+    return nil if raw.blank?
+
+    Time.zone.parse(raw)
+  rescue ArgumentError, TypeError
+    nil
   end
 end

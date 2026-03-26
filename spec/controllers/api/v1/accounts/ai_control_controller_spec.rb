@@ -282,6 +282,78 @@ RSpec.describe 'AiControlController', type: :request do
         end
       end
 
+      it 'returns AI handoff queue from Chatwoot label data' do
+        conversation.update!(
+          label_list: ['handoff', 'payment_collection'],
+          custom_attributes: {
+            'captain' => {
+              'handoff' => {
+                'reason' => 'handover_sales_opportunity',
+                'customer_request' => 'Khách muốn nhân viên tư vấn gói combo',
+                'updated_at' => 40.minutes.ago.iso8601
+              }
+            }
+          }
+        )
+
+        create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: contact,
+          message_type: :incoming,
+          content: 'Cho em xin giá combo mới nhất',
+          created_at: 20.minutes.ago
+        )
+
+        stale_contact = create(:contact, account: account, name: 'Khach da duoc tra loi')
+        stale_conversation = create(:conversation, account: account, contact: stale_contact)
+        stale_conversation.update!(
+          label_list: ['ai_handoff'],
+          custom_attributes: {
+            'captain' => {
+              'handoff' => {
+                'reason' => 'Need human support',
+                'updated_at' => 50.minutes.ago.iso8601
+              }
+            }
+          }
+        )
+
+        agent = create(:user, account: account, role: :administrator, name: 'Ops Lead')
+        create(
+          :message,
+          account: account,
+          inbox: stale_conversation.inbox,
+          conversation: stale_conversation,
+          sender: agent,
+          message_type: :outgoing,
+          content: 'Bên mình đã tiếp nhận và phản hồi rồi nhé',
+          created_at: 10.minutes.ago
+        )
+        stale_conversation.update!(label_list: ['ai_handoff'])
+
+        with_modified_env('CHATBOTLEVAN_INTERNAL_BASE_URL' => '', 'CHATBOTLEVAN_BASE_URL' => '') do
+          get "/api/v1/accounts/#{account.id}/ai_control/manager/ai_handoff_queue",
+              headers: user.create_new_auth_token,
+              params: { limit: 10, max_conversations: 20 },
+              as: :json
+        end
+
+        expect(response).to have_http_status(:ok)
+        json = response.parsed_body
+        expect(json['ok']).to eq(true)
+        expect(json['total']).to eq(1)
+        expect(json.dig('items', 0, 'conversation_id')).to eq(conversation.id.to_s)
+        expect(json.dig('items', 0, 'conversation_display_id')).to eq(conversation.display_id)
+        expect(json.dig('items', 0, 'contact_name')).to eq('Tran Thi B')
+        expect(json.dig('items', 0, 'handoff_reason')).to eq('handover_sales_opportunity')
+        expect(json.dig('items', 0, 'issue_summary')).to eq('Khách muốn nhân viên tư vấn gói combo')
+        expect(json.dig('items', 0, 'last_customer_message')).to eq('Cho em xin giá combo mới nhất')
+        expect(json['items'].map { |item| item['conversation_id'] }).not_to include(stale_conversation.id.to_s)
+      end
+
       it 'returns raw daily messages directly from Chatwoot DB grouped by conversation' do
         outgoing_user = create(:user, account: account, role: :administrator, name: 'Ops Lead')
         target_time = Time.find_zone('UTC').parse('2026-03-12 02:15:00')
