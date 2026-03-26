@@ -3,7 +3,6 @@ import { mapGetters } from 'vuex';
 import { useAlert, useTrack } from 'dashboard/composables';
 import { getUnixTime } from 'date-fns';
 import { CMD_SNOOZE_NOTIFICATION } from 'dashboard/helper/commandbar/events';
-import { openCommandBar } from 'dashboard/helper/commandbar/openCommandBar';
 import wootConstants from 'dashboard/constants/globals';
 import { findSnoozeTime } from 'dashboard/helper/snoozeHelpers';
 import { INBOX_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
@@ -49,7 +48,8 @@ export default {
   },
   methods: {
     openSnoozeNotificationModal() {
-      openCommandBar({ parent: 'snooze_notification' });
+      const ninja = document.querySelector('ninja-keys');
+      ninja.open({ parent: 'snooze_notification' });
     },
     hideCustomSnoozeModal() {
       this.showCustomSnoozeModal = false;

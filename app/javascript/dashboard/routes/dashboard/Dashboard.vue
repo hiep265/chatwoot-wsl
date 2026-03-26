@@ -2,27 +2,19 @@
 import { defineAsyncComponent, ref, computed } from 'vue';
 
 import NextSidebar from 'next/sidebar/Sidebar.vue';
+import WootKeyShortcutModal from 'dashboard/components/widgets/modal/WootKeyShortcutModal.vue';
+import AddAccountModal from 'dashboard/components/app/AddAccountModal.vue';
 import UpgradePage from 'dashboard/routes/dashboard/upgrade/UpgradePage.vue';
 
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useWindowSize } from '@vueuse/core';
 import { getConversationDisplayPreferencePatch } from 'dashboard/helper/bootstrapHelper';
-import { OPEN_COMMAND_BAR } from 'dashboard/helper/commandbar/events';
-import { emitter } from 'shared/helpers/mitt';
 
 import wootConstants from 'dashboard/constants/globals';
 
-const AddAccountModal = defineAsyncComponent(
-  () => import('dashboard/components/app/AddAccountModal.vue')
-);
-
 const CommandBar = defineAsyncComponent(
   () => import('./commands/commandbar.vue')
-);
-
-const WootKeyShortcutModal = defineAsyncComponent(
-  () => import('dashboard/components/widgets/modal/WootKeyShortcutModal.vue')
 );
 
 const FloatingCallWidget = defineAsyncComponent(
@@ -30,10 +22,7 @@ const FloatingCallWidget = defineAsyncComponent(
 );
 
 import CopilotLauncher from 'dashboard/components-next/copilot/CopilotLauncher.vue';
-
-const CopilotContainer = defineAsyncComponent(
-  () => import('dashboard/components/copilot/CopilotContainer.vue')
-);
+import CopilotContainer from 'dashboard/components/copilot/CopilotContainer.vue';
 
 import MobileSidebarLauncher from 'dashboard/components-next/sidebar/MobileSidebarLauncher.vue';
 import { useCallsStore } from 'dashboard/stores/calls';
@@ -73,8 +62,6 @@ export default {
       showCreateAccountModal: false,
       showShortcutModal: false,
       isMobileSidebarOpen: false,
-      shouldRenderCommandBar: false,
-      pendingCommandBarRequest: null,
     };
   },
   computed: {
@@ -118,43 +105,7 @@ export default {
       immediate: true,
     },
   },
-  mounted() {
-    emitter.on(OPEN_COMMAND_BAR, this.requestCommandBarOpen);
-  },
-  unmounted() {
-    emitter.off(OPEN_COMMAND_BAR, this.requestCommandBarOpen);
-  },
   methods: {
-    flushPendingCommandBarOpen() {
-      if (!this.pendingCommandBarRequest) {
-        return;
-      }
-
-      this.$nextTick(() => {
-        const ninja = document.querySelector('ninja-keys');
-
-        if (!ninja || !this.pendingCommandBarRequest) {
-          return;
-        }
-
-        const { options } = this.pendingCommandBarRequest;
-        this.pendingCommandBarRequest = null;
-        ninja.open(options);
-      });
-    },
-    onCommandBarReady() {
-      this.flushPendingCommandBarOpen();
-    },
-    requestCommandBarOpen(options) {
-      this.pendingCommandBarRequest = { options };
-
-      if (!this.shouldRenderCommandBar) {
-        this.shouldRenderCommandBar = true;
-        return;
-      }
-
-      this.flushPendingCommandBarOpen();
-    },
     toggleMobileSidebar() {
       this.isMobileSidebarOpen = !this.isMobileSidebarOpen;
     },
@@ -205,22 +156,20 @@ export default {
       </UpgradePage>
       <template v-if="!showUpgradePage">
         <router-view />
-        <CommandBar v-if="shouldRenderCommandBar" @ready="onCommandBarReady" />
+        <CommandBar />
         <CopilotLauncher />
         <MobileSidebarLauncher
           :is-mobile-sidebar-open="isMobileSidebarOpen"
           @toggle="toggleMobileSidebar"
         />
-        <CopilotContainer v-if="uiSettings?.is_copilot_panel_open" />
+        <CopilotContainer />
         <FloatingCallWidget v-if="hasActiveCall || hasIncomingCall" />
       </template>
       <AddAccountModal
-        v-if="showCreateAccountModal"
         :show="showCreateAccountModal"
         @close-account-create-modal="closeCreateAccountModal"
       />
       <WootKeyShortcutModal
-        v-if="showShortcutModal"
         v-model:show="showShortcutModal"
         @close="closeKeyShortcutModal"
         @clickaway="closeKeyShortcutModal"

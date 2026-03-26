@@ -40,13 +40,45 @@ const { t } = useI18n();
 const { uiSettings, updateUISettings } = useUISettings();
 
 const dragging = ref(false);
+const shouldLogCustomAttributesFlow =
+  import.meta.env.DEV || import.meta.env.MODE === 'test';
 
 const [showAllAttributes, toggleShowAllAttributes] = useToggle(false);
 
-const currentChat = computed(() => getters.getSelectedChat.value);
-const attributes = computed(() =>
-  getters['attributes/getAttributesByModel'].value(props.attributeType)
+const logCustomAttributesFlow = message => {
+  if (!shouldLogCustomAttributesFlow) return;
+  // eslint-disable-next-line no-console
+  console.log(`[ThuocTinhTuyChinh] ${message}`);
+};
+
+const warnCustomAttributesFlow = message => {
+  if (!shouldLogCustomAttributesFlow) return;
+  // eslint-disable-next-line no-console
+  console.warn(`[ThuocTinhTuyChinh] ${message}`);
+};
+
+let hasLoggedMissingAttributesGetter = false;
+
+const currentChat = computed(() => getters.getSelectedChat?.value || {});
+const getAttributesByModel = computed(
+  () => getters['attributes/getAttributesByModel']?.value
 );
+const attributes = computed(() => {
+  const resolveAttributes = getAttributesByModel.value;
+
+  if (typeof resolveAttributes !== 'function') {
+    if (!hasLoggedMissingAttributesGetter) {
+      warnCustomAttributesFlow(
+        'Canh bao tai buoc 1: Thieu getter attributes/getAttributesByModel'
+      );
+      hasLoggedMissingAttributesGetter = true;
+    }
+    return [];
+  }
+
+  const resolvedAttributes = resolveAttributes(props.attributeType);
+  return Array.isArray(resolvedAttributes) ? resolvedAttributes : [];
+});
 
 const contactIdentifier = computed(
   () =>
@@ -55,17 +87,22 @@ const contactIdentifier = computed(
     props.contactId
 );
 
-const contact = computed(() =>
-  getters['contacts/getContact'].value(contactIdentifier.value)
-);
+const getContact = computed(() => getters['contacts/getContact']?.value);
+const contact = computed(() => {
+  if (typeof getContact.value !== 'function') {
+    return null;
+  }
+
+  return getContact.value(contactIdentifier.value) || null;
+});
 
 const customAttributes = computed(() => {
   if (props.attributeType === 'conversation_attribute')
     return currentChat.value.custom_attributes || {};
-  return contact.value.custom_attributes || {};
+  return contact.value?.custom_attributes || {};
 });
 
-const conversationId = computed(() => currentChat.value.id);
+const conversationId = computed(() => currentChat.value?.id ?? null);
 
 const toggleButtonText = computed(() =>
   !showAllAttributes.value
@@ -98,7 +135,7 @@ const orderKey = computed(
 
 const combinedElements = computed(() => {
   // Get saved order from UI settings
-  const savedOrder = uiSettings.value[orderKey.value] ?? [];
+  const savedOrder = uiSettings.value?.[orderKey.value] ?? [];
   const allElements = [
     ...props.staticElements,
     ...filteredCustomAttributes.value,
@@ -167,7 +204,7 @@ const reorderElementsWithStaticPreservation = (
 const onDragEnd = () => {
   dragging.value = false;
   // Get the saved and current saved order
-  const savedOrder = uiSettings.value[orderKey.value] ?? [];
+  const savedOrder = uiSettings.value?.[orderKey.value] ?? [];
   const currentOrder = combinedElements.value.map(({ key }) => key);
 
   const finalOrder = reorderElementsWithStaticPreservation(
@@ -181,7 +218,7 @@ const onDragEnd = () => {
 };
 
 const initializeSettings = () => {
-  const currentOrder = uiSettings.value[orderKey.value];
+  const currentOrder = uiSettings.value?.[orderKey.value];
   if (!currentOrder) {
     const initialOrder = combinedElements.value.map(element => element.key);
     updateUISettings({
@@ -190,7 +227,7 @@ const initializeSettings = () => {
   }
 
   showAllAttributes.value =
-    uiSettings.value[`show_all_attributes_${props.attributeFrom}`] || false;
+    uiSettings.value?.[`show_all_attributes_${props.attributeFrom}`] || false;
 };
 
 const onClickToggle = () => {
@@ -250,7 +287,10 @@ const onCopy = async attributeValue => {
 };
 
 onMounted(() => {
+  logCustomAttributesFlow('Bat dau luong');
   initializeSettings();
+  logCustomAttributesFlow('Buoc 1: Da khoi tao thu tu va trang thai hien thi');
+  logCustomAttributesFlow('Ket thuc luong');
 });
 
 const evenClass = [

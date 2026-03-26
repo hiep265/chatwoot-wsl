@@ -31,6 +31,7 @@ import { resizeObserver } from 'shared/directives/resizeObserver';
 import { initializeSentry } from 'shared/helpers/sentry';
 
 import { directive as onClickaway } from 'vue3-click-away';
+import { replaceBrandingText } from 'shared/helpers/branding';
 
 import 'floating-vue/dist/style.css';
 
@@ -38,6 +39,7 @@ const i18n = createI18n({
   legacy: false, // https://github.com/intlify/vue-i18n/issues/1902
   locale: 'en',
   messages: i18nMessages,
+  postTranslation: replaceBrandingText,
 });
 
 sync(store, router);

@@ -6,6 +6,7 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
 import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
+import { getBrandName } from 'shared/helpers/branding';
 
 const props = defineProps({
   script: {
@@ -22,11 +23,14 @@ const props = defineProps({
   },
   codepenTitle: {
     type: String,
-    default: 'Chatwoot Codepen',
+    default: '',
   },
 });
 
 const { t } = useI18n();
+const effectiveCodepenTitle = computed(
+  () => props.codepenTitle || `${getBrandName()} CodePen`
+);
 
 const scrubbedScript = computed(() => {
   // remove trailing and leading extra lines and not spaces
@@ -46,7 +50,7 @@ const scrubbedScript = computed(() => {
 const codepenScriptValue = computed(() => {
   const lang = props.lang === 'javascript' ? 'js' : props.lang;
   return JSON.stringify({
-    title: props.codepenTitle,
+    title: effectiveCodepenTitle.value,
     private: true,
     [lang]: scrubbedScript.value,
   });

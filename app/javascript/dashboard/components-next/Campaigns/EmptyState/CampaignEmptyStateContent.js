@@ -1,3 +1,5 @@
+import { replaceBrandingText } from 'shared/helpers/branding';
+
 export const ONGOING_CAMPAIGN_EMPTY_STATE_CONTENT = [
   {
     id: 1,
@@ -17,7 +19,7 @@ export const ONGOING_CAMPAIGN_EMPTY_STATE_CONTENT = [
     enabled: true,
     campaign_type: 'ongoing',
     trigger_rules: {
-      url: 'https://www.chatwoot.com/features/chatbot/',
+      url: replaceBrandingText('https://www.chatwoot.com/features/chatbot/'),
       time_on_page: 10,
     },
     trigger_only_during_business_hours: true,
@@ -42,7 +44,7 @@ export const ONGOING_CAMPAIGN_EMPTY_STATE_CONTENT = [
     enabled: false,
     campaign_type: 'ongoing',
     trigger_rules: {
-      url: 'https://www.chatwoot.com/pricings',
+      url: replaceBrandingText('https://www.chatwoot.com/pricings'),
       time_on_page: 10,
     },
     trigger_only_during_business_hours: false,
@@ -60,14 +62,18 @@ export const ONGOING_CAMPAIGN_EMPTY_STATE_CONTENT = [
     },
     sender: {
       id: 1,
-      name: 'Chatwoot',
+      name: replaceBrandingText('Chatwoot'),
     },
-    message: 'Hi! Chatwoot here. Need help setting up? Let me know!',
+    message: replaceBrandingText(
+      'Hi! Chatwoot here. Need help setting up? Let me know!'
+    ),
     campaign_status: 'active',
     enabled: false,
     campaign_type: 'ongoing',
     trigger_rules: {
-      url: 'https://{*.}?chatwoot.com/apps/account/*/settings/inboxes/new/',
+      url: replaceBrandingText(
+        'https://{*.}?chatwoot.com/apps/account/*/settings/inboxes/new/'
+      ),
       time_on_page: 10,
     },
     trigger_only_during_business_hours: false,

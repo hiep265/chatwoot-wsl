@@ -1,12 +1,13 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
 import Button from 'dashboard/components-next/button/Button.vue';
+import { getBrandName } from 'shared/helpers/branding';
 
-defineProps({
+const props = defineProps({
   title: {
     type: String,
-    default: 'Chatwoot',
+    default: '',
   },
 });
 
@@ -14,6 +15,7 @@ const emit = defineEmits(['search', 'close']);
 
 const searchInputRef = ref(null);
 const searchQuery = ref('');
+const displayTitle = computed(() => props.title || getBrandName());
 
 onMounted(() => {
   searchInputRef.value.focus();
@@ -48,7 +50,7 @@ useKeyboardEvents(keyboardEvents);
   <div class="flex flex-col py-1">
     <div class="flex items-center justify-between py-2 mb-1">
       <h3 class="text-base text-n-slate-12">
-        {{ title }}
+        {{ displayTitle }}
       </h3>
       <Button ghost xs slate icon="i-lucide-x" @click="onClose" />
     </div>

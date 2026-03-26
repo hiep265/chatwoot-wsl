@@ -10,6 +10,7 @@ import router from '../widget/router';
 import { directive as onClickaway } from 'vue3-click-away';
 import { domPurifyConfig } from '../shared/helpers/HTMLSanitizer';
 import { plugin, defaultConfig } from '@formkit/vue';
+import { replaceBrandingText } from 'shared/helpers/branding';
 
 import {
   startsWithPlus,
@@ -20,6 +21,7 @@ const i18n = createI18n({
   legacy: false, // https://github.com/intlify/vue-i18n/issues/1902
   locale: 'en',
   messages: i18nMessages,
+  postTranslation: replaceBrandingText,
 });
 
 const app = createApp(App);

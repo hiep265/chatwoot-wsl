@@ -5,7 +5,6 @@ import { useStore } from 'vuex';
 
 import ReportsAPI from 'dashboard/api/reports';
 import SummaryReportsAPI from 'dashboard/api/summaryReports';
-import ConversationLabelsAPI from 'dashboard/api/conversations';
 import InboxConversationAPI from 'dashboard/api/inbox/conversation';
 import AiControlAPI from 'dashboard/api/aiControl';
 
@@ -22,6 +21,10 @@ import AftercareEnrollmentDialog from './AftercareEnrollmentDialog.vue';
 
 import { useAlert } from 'dashboard/composables';
 import { emitter } from 'shared/helpers/mitt';
+
+const REALTIME_OPERATIONS_REFRESH_DELAY = 300;
+const MANAGER_QUEUE_LOG_PREFIX = '[AiControlQueue]';
+const REALTIME_REFRESH_LOG_PREFIX = '[AiControlRealtime]';
 
 const props = defineProps({
   standalone: {
@@ -42,6 +45,19 @@ const activeMainTab = ref('operations');
 const reportingDashboardUrl = ref('https://app.powerbi.com/view?r=custom_id_from_user');
 
 const activeKpiTab = ref('traffic');
+const mountedMainTabs = ref({
+  operations: activeMainTab.value === 'operations',
+  reporting: activeMainTab.value === 'reporting',
+  comment: activeMainTab.value === 'comment',
+  aftercare: activeMainTab.value === 'aftercare',
+});
+const panelScrollContainer = ref(null);
+const mainTabScrollOffsets = ref({
+  operations: 0,
+  reporting: 0,
+  comment: 0,
+  aftercare: 0,
+});
 
 const trafficConversationCount = ref(0);
 const botConversationCount = ref(0);
@@ -185,6 +201,40 @@ const adminPanelRoute = computed(() => {
   };
 });
 
+const hasMountedMainTab = tab => {
+  const normalizedTab = String(tab || '').trim();
+  return Boolean(normalizedTab && mountedMainTabs.value[normalizedTab]);
+};
+
+const markMainTabAsMounted = tab => {
+  const normalizedTab = String(tab || '').trim();
+  if (!normalizedTab || mountedMainTabs.value[normalizedTab]) return;
+
+  mountedMainTabs.value = {
+    ...mountedMainTabs.value,
+    [normalizedTab]: true,
+  };
+};
+
+const saveMainTabScrollPosition = (tab = activeMainTab.value) => {
+  const normalizedTab = String(tab || '').trim();
+  const container = panelScrollContainer.value;
+  if (!normalizedTab || !container) return;
+
+  mainTabScrollOffsets.value = {
+    ...mainTabScrollOffsets.value,
+    [normalizedTab]: container.scrollTop,
+  };
+};
+
+const restoreMainTabScrollPosition = tab => {
+  const normalizedTab = String(tab || '').trim();
+  const container = panelScrollContainer.value;
+  if (!normalizedTab || !container) return;
+
+  container.scrollTop = Number(mainTabScrollOffsets.value[normalizedTab] || 0);
+};
+
 const hasSelectedConversation = computed(() => {
   const id = String(aiControlConversationId.value || '').trim();
   return Boolean(id && id !== '0');
@@ -213,6 +263,9 @@ const showAddLabelPopup = ref(false);
 const showDeleteLabelPopup = ref(false);
 const selectedLabelToDelete = ref(null);
 const isDeletingLabel = ref(false);
+
+let managerQueuesRequestSequence = 0;
+let realtimeOperationsRefreshTimer = null;
 
 const formatCount = value => {
   return Number(value || 0).toLocaleString();
@@ -1586,26 +1639,66 @@ const openReportLabelConversation = async item => {
 };
 
 const fetchManagerQueues = async () => {
+  const requestSequence = managerQueuesRequestSequence + 1;
+  managerQueuesRequestSequence = requestSequence;
+
   isManagerQueuesLoading.value = true;
   managerQueuesError.value = '';
+  // eslint-disable-next-line no-console
+  console.log(`${MANAGER_QUEUE_LOG_PREFIX} Bắt đầu luồng`);
+  // eslint-disable-next-line no-console
+  console.log(
+    `${MANAGER_QUEUE_LOG_PREFIX} Bước 1: Tải danh sách chờ nhân viên phản hồi.`
+  );
 
   try {
     const handoffResp = await AiControlAPI.getManagerAiHandoffQueue({
       limit: 20,
       maxConversations: 200,
     });
+    if (requestSequence !== managerQueuesRequestSequence) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `${MANAGER_QUEUE_LOG_PREFIX} Cảnh báo tại bước 2: Bỏ qua response cũ vì đã có lượt tải mới hơn.`
+      );
+      return;
+    }
+
     managerAiHandoffQueue.value = Array.isArray(handoffResp?.data?.items)
       ? handoffResp.data.items
       : [];
+    // eslint-disable-next-line no-console
+    console.log(
+      `${MANAGER_QUEUE_LOG_PREFIX} Bước 2: Đã cập nhật danh sách chờ nhân viên phản hồi.`
+    );
   } catch (error) {
+    if (requestSequence !== managerQueuesRequestSequence) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `${MANAGER_QUEUE_LOG_PREFIX} Cảnh báo tại bước 2: Bỏ qua lỗi cũ vì đã có lượt tải mới hơn.`
+      );
+      return;
+    }
+
     managerAiHandoffQueue.value = [];
     managerQueuesError.value =
       error?.response?.data?.error ||
       error?.response?.data?.detail?.error ||
       'Không tải được danh sách chờ nhân viên phản hồi.';
+    // eslint-disable-next-line no-console
+    console.error(
+      `${MANAGER_QUEUE_LOG_PREFIX} Lỗi tại bước 2: Không tải được danh sách chờ nhân viên phản hồi.`,
+      error
+    );
     useAlert(managerQueuesError.value);
   } finally {
+    if (requestSequence !== managerQueuesRequestSequence) {
+      return;
+    }
+
     isManagerQueuesLoading.value = false;
+    // eslint-disable-next-line no-console
+    console.log(`${MANAGER_QUEUE_LOG_PREFIX} Kết thúc luồng`);
   }
 };
 
@@ -2281,7 +2374,7 @@ const onFilterChange = async ({ from: nextFrom, to: nextTo }) => {
 
 // Old per-conversation pause logic removed — now using per-channel inbox blocking
 
-const onRefreshLiveConversations = async () => {
+const refreshLiveConversationsNow = async () => {
   await Promise.all([
     fetchLiveConversations(),
     fetchPaymentReviewCases(),
@@ -2294,6 +2387,43 @@ const onRefreshLiveConversations = async () => {
       fetchLabelSummary(),
     ]);
   }
+};
+
+const onRefreshLiveConversations = () => {
+  if (realtimeOperationsRefreshTimer) {
+    window.clearTimeout(realtimeOperationsRefreshTimer);
+    // eslint-disable-next-line no-console
+    console.log(
+      `${REALTIME_REFRESH_LOG_PREFIX} Bước 1: Có thêm event realtime nên dời lịch tải lại dữ liệu.`
+    );
+  } else {
+    // eslint-disable-next-line no-console
+    console.log(`${REALTIME_REFRESH_LOG_PREFIX} Bắt đầu luồng`);
+    // eslint-disable-next-line no-console
+    console.log(
+      `${REALTIME_REFRESH_LOG_PREFIX} Bước 1: Gom các event realtime gần nhau trước khi tải lại dữ liệu.`
+    );
+  }
+
+  realtimeOperationsRefreshTimer = window.setTimeout(async () => {
+    try {
+      // eslint-disable-next-line no-console
+      console.log(
+        `${REALTIME_REFRESH_LOG_PREFIX} Bước 2: Tải lại dữ liệu vận hành từ event realtime.`
+      );
+      await refreshLiveConversationsNow();
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `${REALTIME_REFRESH_LOG_PREFIX} Lỗi tại bước 2: Không tải lại được dữ liệu vận hành.`,
+        error
+      );
+    } finally {
+      realtimeOperationsRefreshTimer = null;
+      // eslint-disable-next-line no-console
+      console.log(`${REALTIME_REFRESH_LOG_PREFIX} Kết thúc luồng`);
+    }
+  }, REALTIME_OPERATIONS_REFRESH_DELAY);
 };
 
 const openReportingDashboard = () => {
@@ -2665,23 +2795,46 @@ const commentTimeAgo = (iso) => {
   }
 };
 
-watch(activeMainTab, async (tab) => {
-  if (tab === 'reporting') {
+const initializeMainTab = async tab => {
+  const normalizedTab = String(tab || '').trim();
+  if (!normalizedTab) return;
+
+  const isFirstVisit = !hasMountedMainTab(normalizedTab);
+  markMainTabAsMounted(normalizedTab);
+
+  if (normalizedTab === 'reporting') {
     await loadChartJs();
-    await fetchAiGrowthSeries();
-    await nextTick();
-    renderCharts();
+    if (isFirstVisit) {
+      await fetchAiGrowthSeries();
+    }
+    return;
   }
-  if (tab === 'operations') {
-    await fetchManagerQueues();
-    await fetchCustomer360(aiControlConversationId.value);
-  }
-  if (tab === 'comment') {
+
+  if (!isFirstVisit) return;
+
+  if (normalizedTab === 'comment') {
     await fetchCommentQueue();
   }
-  if (tab === 'aftercare') {
+
+  if (normalizedTab === 'aftercare') {
     await fetchAftercareEnrollments();
   }
+};
+
+watch(activeMainTab, async (tab, previousTab) => {
+  if (previousTab) {
+    saveMainTabScrollPosition(previousTab);
+  }
+
+  await initializeMainTab(tab);
+  await nextTick();
+
+  if (tab === 'reporting') {
+    renderCharts();
+    await nextTick();
+  }
+
+  restoreMainTabScrollPosition(tab);
 });
 
 watch([trackedLabelRows, aiGrowthSeries], () => {
@@ -2713,6 +2866,10 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (realtimeOperationsRefreshTimer) {
+    window.clearTimeout(realtimeOperationsRefreshTimer);
+    realtimeOperationsRefreshTimer = null;
+  }
   emitter.off(
     'ai_control_panel:refresh_live_conversations',
     onRefreshLiveConversations
@@ -2721,7 +2878,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="overflow-auto bg-n-background w-full px-6">
+  <div ref="panelScrollContainer" class="overflow-auto bg-n-background w-full px-6">
     <div class="max-w-[80rem] mx-auto pb-12">
       <ReportHeader
         header-title="Bảng điều khiển AI"
@@ -2799,8 +2956,11 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- TAB: VẬN HÀNH -->
-        <template v-if="activeMainTab === 'operations'">
-          <div class="flex flex-col gap-6">
+        <div
+          v-if="hasMountedMainTab('operations')"
+          v-show="activeMainTab === 'operations'"
+          class="flex flex-col gap-6"
+        >
             <!-- Risk Banner -->
             <div
               v-if="isRiskBannerVisible"
@@ -3288,6 +3448,7 @@ onBeforeUnmount(() => {
                   <ConversationView
                     :inbox-id="0"
                     :conversation-id="aiControlConversationId"
+                    force-two-pane
                   />
                 </div>
               </div>
@@ -3622,11 +3783,13 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-          </div>
-        </template>
+        </div>
 
-        <template v-else-if="activeMainTab === 'aftercare'">
-          <div class="flex flex-col gap-6">
+        <div
+          v-if="hasMountedMainTab('aftercare')"
+          v-show="activeMainTab === 'aftercare'"
+          class="flex flex-col gap-6"
+        >
             <div class="rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm overflow-hidden">
               <div class="px-6 py-5 border-b border-n-slate-3 bg-n-solid-2">
                 <div class="flex flex-wrap items-center justify-between gap-4">
@@ -3635,7 +3798,7 @@ onBeforeUnmount(() => {
                       Tư vấn sau mua
                     </div>
                     <div class="mt-1 text-sm text-n-slate-11/80">
-                      Theo dõi các kế hoạch tư vấn sau mua và trạng thái gửi Gmail ngoài 24 giờ trong Chatwoot.
+                      Theo dõi các kế hoạch tư vấn sau mua và trạng thái gửi Gmail ngoài 24 giờ trong TA AI TECH.
                     </div>
                   </div>
                   <div class="flex items-center gap-3">
@@ -3935,12 +4098,14 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-          </div>
-        </template>
+        </div>
 
         <!-- TAB: BÁO CÁO -->
-        <template v-else-if="activeMainTab === 'reporting'">
-          <div class="flex flex-col gap-6">
+        <div
+          v-if="hasMountedMainTab('reporting')"
+          v-show="activeMainTab === 'reporting'"
+          class="flex flex-col gap-6"
+        >
             <!-- Report Filter -->
             <ReportFilterSelector
               :show-agents-filter="false"
@@ -4176,12 +4341,14 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-          </div>
-        </template>
+        </div>
 
         <!-- TAB: COMMENT -->
-        <template v-else-if="activeMainTab === 'comment'">
-          <div class="grid gap-6 lg:grid-cols-12 lg:items-start">
+        <div
+          v-if="hasMountedMainTab('comment')"
+          v-show="activeMainTab === 'comment'"
+          class="grid gap-6 lg:grid-cols-12 lg:items-start"
+        >
             <!-- Comment Queue (Left) -->
             <div class="lg:col-span-4 xl:col-span-4 self-start rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm overflow-hidden">
               <div class="px-5 py-4 border-b border-n-slate-3 bg-n-solid-2">
@@ -4412,8 +4579,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-          </div>
-        </template>
+        </div>
       </div>
     </div>
     <!-- Add Label Modal -->

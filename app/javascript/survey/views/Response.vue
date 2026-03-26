@@ -9,6 +9,9 @@ import StarRating from 'shared/components/StarRating.vue';
 import { getSurveyDetails, updateSurvey } from 'survey/api/survey';
 
 import { CSAT_DISPLAY_TYPES } from 'shared/constants/messages';
+import { getBrandName } from 'shared/helpers/branding';
+
+const brandName = getBrandName();
 
 export default {
   name: 'Response',
@@ -29,6 +32,7 @@ export default {
       feedbackMessage: '',
       isUpdating: false,
       logo: '',
+      brandName,
       inboxName: '',
       displayType: CSAT_DISPLAY_TYPES.EMOJI,
       messageContent: '',
@@ -157,7 +161,7 @@ export default {
       class="flex flex-col w-full h-full bg-n-solid-1 rounded-lg border border-solid border-n-weak shadow-md lg:w-2/5 lg:h-auto"
     >
       <div class="w-full px-12 pt-12 pb-6 m-auto my-0">
-        <img v-if="logo" :src="logo" alt="Chatwoot logo" class="mb-6 logo" />
+        <img v-if="logo" :src="logo" :alt="`${brandName} logo`" class="mb-6 logo" />
         <p
           v-if="!isRatingSubmitted"
           class="mb-8 text-lg leading-relaxed text-n-slate-12"

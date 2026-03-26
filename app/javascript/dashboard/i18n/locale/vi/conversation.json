@@ -251,6 +251,33 @@
     "MESSAGE_ERROR": "Không thể gửi tin nhắn này, vui lòng thử lại sau",
     "SENT_BY": "Gửi bởi:",
     "BOT": "Bot",
+    "BOT_FEEDBACK": {
+      "ACTION": "Danh dau cau tra loi nay la chua dung",
+      "FALLBACK_QUESTION": "Cau hoi cua khach hang duoc danh dau tu tin nhan bot",
+      "DIALOG": {
+        "TITLE": "Danh dau cau tra loi cua bot",
+        "DESCRIPTION": "Them ghi chu de noi dung nay duoc xem xet trong Captain Pending FAQs.",
+        "ASSISTANT_PLACEHOLDER": "Chon tro ly",
+        "ASSISTANT_SEARCH_PLACEHOLDER": "Tim tro ly...",
+        "ASSISTANT_LOADING": "Dang tai danh sach tro ly...",
+        "ASSISTANT_EMPTY": "Khong co tro ly nao",
+        "ASSISTANT_REQUIRED": "Vui long chon tro ly",
+        "NOTE_LABEL": "Ghi chu nguoi duyet",
+        "NOTE_PLACEHOLDER": "Mo ta noi dung chua dung va can cai thien gi...",
+        "CONFIRM": "Gui vao Pending FAQs"
+      },
+      "ALERTS": {
+        "SUCCESS": "Da gui vao Captain Pending FAQs",
+        "ERROR": "Khong the gui phan hoi nay. Vui long thu lai.",
+        "ASSISTANT_FETCH_ERROR": "Khong the tai danh sach tro ly. Vui long thu lai.",
+        "MISSING_ASSISTANT": "Khong xac dinh duoc tro ly Captain cua tin nhan nay."
+      },
+      "PENDING_ANSWER": {
+        "CUSTOMER_QUESTION_TITLE": "Cau hoi cua khach hang:",
+        "BOT_ANSWER_TITLE": "Cau tra loi cua bot bi danh dau la chua dung:",
+        "NOTE_TITLE": "Ghi chu nguoi duyet:"
+      }
+    },
     "SEND_FAILED": "Không thể gửi tin nhắn! Thử lại",
     "TRY_AGAIN": "thử lại",
     "ASSIGNMENT": {

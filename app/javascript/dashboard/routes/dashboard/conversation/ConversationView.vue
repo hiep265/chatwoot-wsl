@@ -10,7 +10,6 @@ import CmdBarConversationSnooze from 'dashboard/routes/dashboard/commands/CmdBar
 import { emitter } from 'shared/helpers/mitt';
 import SidepanelSwitch from 'dashboard/components-next/Conversation/SidepanelSwitch.vue';
 import ConversationSidebar from 'dashboard/components/widgets/conversation/ConversationSidebar.vue';
-import { scheduleAfterFirstPaint } from 'dashboard/helper/bootstrapHelper';
 
 export default {
   components: {
@@ -53,6 +52,10 @@ export default {
       type: [String, Number],
       default: 0,
     },
+    forceTwoPane: {
+      type: Boolean,
+      default: false,
+    },
   },
   setup() {
     const { uiSettings, updateUISettings } = useUISettings();
@@ -67,7 +70,6 @@ export default {
   data() {
     return {
       showSearchModal: false,
-      cancelBootstrapPreload: null,
     };
   },
   computed: {
@@ -82,6 +84,10 @@ export default {
       return this.conversationId ? true : !this.isOnExpandedLayout;
     },
     isOnExpandedLayout() {
+      if (this.forceTwoPane) {
+        return false;
+      }
+
       const {
         LAYOUT_TYPES: { CONDENSED },
       } = wootConstants;
@@ -116,20 +122,13 @@ export default {
   },
 
   mounted() {
-    this.cancelBootstrapPreload = scheduleAfterFirstPaint(() => {
-      this.$store.dispatch('agents/get');
-      this.$store.dispatch('portals/index');
-      this.cancelBootstrapPreload = null;
-    });
+    this.$store.dispatch('agents/get');
+    this.$store.dispatch('portals/index');
     this.initialize();
     this.$watch('$store.state.route', () => this.initialize());
     this.$watch('chatList.length', () => {
       this.setActiveChat();
     });
-  },
-
-  unmounted() {
-    this.cancelBootstrapPreload?.();
   },
 
   methods: {

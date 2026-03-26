@@ -7,6 +7,7 @@ import ReportsAPI from 'dashboard/api/reports';
 import SummaryReportsAPI from 'dashboard/api/summaryReports';
 import InboxConversationAPI from 'dashboard/api/inbox/conversation';
 import AiControlAPI from 'dashboard/api/aiControl';
+import { emitter } from 'shared/helpers/mitt';
 
 const mockRoute = reactive({
   name: 'ai_control_panel',
@@ -98,9 +99,18 @@ const createWrapper = ({ labels = [] } = {}) => {
         },
         ReportFilterSelector: true,
         ConversationView: {
-          props: ['conversationId'],
+          props: {
+            conversationId: {
+              type: [String, Number],
+              default: '',
+            },
+            forceTwoPane: {
+              type: Boolean,
+              default: false,
+            },
+          },
           template:
-            '<div data-test-id="conversation-view">{{ conversationId }}</div>',
+            '<div data-test-id="conversation-view" :data-force-two-pane="String(forceTwoPane)">{{ conversationId }}</div>',
         },
         Button: {
           props: ['label'],
@@ -127,11 +137,44 @@ const createWrapper = ({ labels = [] } = {}) => {
   });
 };
 
+const createDeferred = () => {
+  let resolve;
+  let reject;
+
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+};
+
+const buildManagerQueueResponse = items => ({
+  data: { items },
+});
+
+const getRealtimeRefreshHandler = () => {
+  return emitter.on.mock.calls.find(
+    ([eventName]) => eventName === 'ai_control_panel:refresh_live_conversations'
+  )?.[1];
+};
+
+const findButtonByText = (wrapper, label) => {
+  return wrapper.findAll('button').find(button => button.text() === label);
+};
+
 describe('AiControlPanel', () => {
+  let consoleLogSpy;
+  let consoleWarnSpy;
+  let consoleErrorSpy;
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-18T00:00:00Z'));
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     window.Chart = vi.fn(() => ({ destroy: vi.fn() }));
     Element.prototype.scrollIntoView = vi.fn();
 
@@ -418,17 +461,20 @@ describe('AiControlPanel', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    consoleLogSpy.mockRestore();
+    consoleWarnSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
   });
 
   it('opens a label popup instead of navigating away from the current page', async () => {
     const wrapper = createWrapper();
 
-    wrapper.vm.labelSummary = [
-      { name: 'khách_mới', conversationsCount: 1 },
-    ];
+    wrapper.vm.labelSummary = [{ name: 'khách_mới', conversationsCount: 1 }];
     await nextTick();
 
-    await wrapper.find('[data-test-id="ai-control-tab-reporting"]').trigger('click');
+    await wrapper
+      .find('[data-test-id="ai-control-tab-reporting"]')
+      .trigger('click');
     await flushPromises();
     await wrapper
       .find('[data-test-id="report-label-trigger-khach_moi"]')
@@ -447,12 +493,12 @@ describe('AiControlPanel', () => {
   it('opens the selected conversation inside the current AI Control page', async () => {
     const wrapper = createWrapper();
 
-    wrapper.vm.labelSummary = [
-      { name: 'khách_mới', conversationsCount: 1 },
-    ];
+    wrapper.vm.labelSummary = [{ name: 'khách_mới', conversationsCount: 1 }];
     await nextTick();
 
-    await wrapper.find('[data-test-id="ai-control-tab-reporting"]').trigger('click');
+    await wrapper
+      .find('[data-test-id="ai-control-tab-reporting"]')
+      .trigger('click');
     await flushPromises();
     await wrapper
       .find('[data-test-id="report-label-trigger-khach_moi"]')
@@ -472,10 +518,131 @@ describe('AiControlPanel', () => {
     );
   });
 
+  it('coalesces realtime refresh events before reloading the handoff queue', async () => {
+    const wrapper = createWrapper();
+    await flushPromises();
+
+    const refreshHandler = getRealtimeRefreshHandler();
+    AiControlAPI.getManagerAiHandoffQueue.mockClear();
+    AiControlAPI.listPaymentReviewCases.mockClear();
+    InboxConversationAPI.get.mockClear();
+
+    refreshHandler();
+    refreshHandler();
+
+    expect(AiControlAPI.getManagerAiHandoffQueue).not.toHaveBeenCalled();
+    expect(AiControlAPI.listPaymentReviewCases).not.toHaveBeenCalled();
+    expect(InboxConversationAPI.get).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(300);
+    await flushPromises();
+
+    expect(AiControlAPI.getManagerAiHandoffQueue).toHaveBeenCalledTimes(1);
+    expect(AiControlAPI.listPaymentReviewCases).toHaveBeenCalledTimes(1);
+    expect(InboxConversationAPI.get).toHaveBeenCalledTimes(1);
+
+    wrapper.unmount();
+  });
+
+  it('keeps the latest handoff queue response when requests finish out of order', async () => {
+    const firstRequest = createDeferred();
+    const secondRequest = createDeferred();
+
+    AiControlAPI.getManagerAiHandoffQueue.mockReset();
+    AiControlAPI.getManagerAiHandoffQueue
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise);
+
+    const wrapper = createWrapper();
+    await nextTick();
+
+    await findButtonByText(wrapper, 'Làm mới danh sách').trigger('click');
+
+    secondRequest.resolve(
+      buildManagerQueueResponse([
+        {
+          conversation_id: '202',
+          conversation_display_id: 6202,
+          contact_name: 'Khách mới',
+        },
+      ])
+    );
+    await flushPromises();
+
+    firstRequest.resolve(
+      buildManagerQueueResponse([
+        {
+          conversation_id: '101',
+          conversation_display_id: 6101,
+          contact_name: 'Khách cũ',
+        },
+      ])
+    );
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Khách mới');
+    expect(wrapper.text()).not.toContain('Khách cũ');
+
+    wrapper.unmount();
+  });
+
+  it('keeps the latest manager queue error and ignores an older success response afterward', async () => {
+    const firstRequest = createDeferred();
+    const secondRequest = createDeferred();
+
+    AiControlAPI.getManagerAiHandoffQueue.mockReset();
+    AiControlAPI.getManagerAiHandoffQueue
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise);
+
+    const wrapper = createWrapper();
+    await nextTick();
+
+    await findButtonByText(wrapper, 'Làm mới danh sách').trigger('click');
+
+    secondRequest.reject({
+      response: {
+        data: {
+          error: 'Không tải được queue mới.',
+        },
+      },
+    });
+    await flushPromises();
+
+    firstRequest.resolve(
+      buildManagerQueueResponse([
+        {
+          conversation_id: '303',
+          conversation_display_id: 6303,
+          contact_name: 'Khách bị cũ',
+        },
+      ])
+    );
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Không tải được queue mới.');
+    expect(wrapper.text()).not.toContain('Khách bị cũ');
+    expect(wrapper.vm.isManagerQueuesLoading).toBe(false);
+
+    wrapper.unmount();
+  });
+
+  it('forces the embedded conversation view to stay on two panes', async () => {
+    const wrapper = createWrapper();
+
+    expect(
+      wrapper
+        .find('[data-test-id="conversation-view"]')
+        .attributes('data-force-two-pane')
+    ).toBe('true');
+  });
+
   it('loads the reporting chart with metric tabs inside the previous AI trend card', async () => {
     const wrapper = createWrapper();
 
-    await wrapper.find('[data-test-id="ai-control-tab-reporting"]').trigger('click');
+    await wrapper
+      .find('[data-test-id="ai-control-tab-reporting"]')
+      .trigger('click');
     await flushPromises();
 
     expect(wrapper.text()).toContain('Doanh thu');
@@ -490,11 +657,15 @@ describe('AiControlPanel', () => {
 
     const wrapper = createWrapper();
 
-    await wrapper.find('[data-test-id="ai-control-tab-reporting"]').trigger('click');
+    await wrapper
+      .find('[data-test-id="ai-control-tab-reporting"]')
+      .trigger('click');
     await flushPromises();
     SummaryReportsAPI.getLabelReports.mockClear();
 
-    await wrapper.find('[data-test-id="trend-metric-new_clients"]').trigger('click');
+    await wrapper
+      .find('[data-test-id="trend-metric-new_clients"]')
+      .trigger('click');
     await flushPromises();
 
     expect(SummaryReportsAPI.getLabelReports).toHaveBeenNthCalledWith(1, {
@@ -506,14 +677,20 @@ describe('AiControlPanel', () => {
 
   it('updates the close rate chart range when selecting a different stock-style window', async () => {
     SummaryReportsAPI.getLabelReports.mockResolvedValue({ data: [] });
-    ReportsAPI.getSummary.mockResolvedValue({ data: { conversations_count: 0 } });
+    ReportsAPI.getSummary.mockResolvedValue({
+      data: { conversations_count: 0 },
+    });
 
     const wrapper = createWrapper();
 
-    await wrapper.find('[data-test-id="ai-control-tab-reporting"]').trigger('click');
+    await wrapper
+      .find('[data-test-id="ai-control-tab-reporting"]')
+      .trigger('click');
     await flushPromises();
 
-    await wrapper.find('[data-test-id="trend-metric-close_rate"]').trigger('click');
+    await wrapper
+      .find('[data-test-id="trend-metric-close_rate"]')
+      .trigger('click');
     await flushPromises();
     SummaryReportsAPI.getLabelReports.mockClear();
     ReportsAPI.getSummary.mockClear();
@@ -548,6 +725,34 @@ describe('AiControlPanel', () => {
     expect(wrapper.text()).toContain('Chăm sóc sau mua');
     expect(wrapper.text()).toContain('Bản nháp cũ cho ngày 1.');
     expect(wrapper.text()).toContain('Gửi gần nhất');
+  });
+
+  it('preserves the aftercare tab state and does not refetch when returning to it', async () => {
+    const wrapper = createWrapper();
+
+    await wrapper.find('[data-test-id="ai-control-tab-aftercare"]').trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.listAftercareEnrollments).toHaveBeenCalledTimes(1);
+
+    await wrapper
+      .find('[data-test-id="aftercare-edit-91-501"]')
+      .trigger('click');
+    await flushPromises();
+
+    await wrapper
+      .find('[data-test-id="aftercare-edit-input-91-501"]')
+      .setValue('Giữ nguyên nội dung đang chỉnh.');
+
+    await wrapper.find('[data-test-id="ai-control-tab-operations"]').trigger('click');
+    await flushPromises();
+    await wrapper.find('[data-test-id="ai-control-tab-aftercare"]').trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.listAftercareEnrollments).toHaveBeenCalledTimes(1);
+    expect(
+      wrapper.find('[data-test-id="aftercare-edit-input-91-501"]').element.value
+    ).toBe('Giữ nguyên nội dung đang chỉnh.');
   });
 
   it('regenerates an aftercare draft and updates the preview inline', async () => {

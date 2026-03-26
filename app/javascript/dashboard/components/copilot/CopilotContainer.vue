@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useAlert } from 'dashboard/composables';
 import { useStore } from 'dashboard/composables/store';
 import Copilot from 'dashboard/components-next/copilot/Copilot.vue';
@@ -10,7 +10,6 @@ import { useWindowSize } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import wootConstants from 'dashboard/constants/globals';
-import { scheduleAfterFirstPaint } from 'dashboard/helper/bootstrapHelper';
 
 defineProps({
   conversationInboxType: {
@@ -35,7 +34,6 @@ const isSmallScreen = computed(
 );
 
 const selectedCopilotThreadId = ref(null);
-let cancelCopilotBootstrapPreload = null;
 const messages = computed(() =>
   store.getters['copilotMessages/getMessagesByThreadId'](
     selectedCopilotThreadId.value
@@ -126,15 +124,8 @@ const sendMessage = async message => {
 
 onMounted(() => {
   if (isEnterprise) {
-    cancelCopilotBootstrapPreload = scheduleAfterFirstPaint(() => {
-      store.dispatch('captainAssistants/get');
-      cancelCopilotBootstrapPreload = null;
-    });
+    store.dispatch('captainAssistants/get');
   }
-});
-
-onUnmounted(() => {
-  cancelCopilotBootstrapPreload?.();
 });
 </script>
 

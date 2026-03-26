@@ -58,7 +58,7 @@ class AccountSamlSettings < ApplicationRecord
   end
 
   def installation_name
-    GlobalConfigService.load('INSTALLATION_NAME', 'Chatwoot')
+    GlobalConfigService.load('INSTALLATION_NAME', 'TA AI TECH')
   end
 
   def update_account_users_provider

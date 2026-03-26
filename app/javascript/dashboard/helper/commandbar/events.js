@@ -3,7 +3,6 @@ export const CMD_SWITCH_TAB = 'CMD_SWITCH_TAB';
 
 // General Actions - Switch conversation status
 export const CMD_SWITCH_STATUS = 'CMD_SWITCH_STATUS';
-export const OPEN_COMMAND_BAR = 'OPEN_COMMAND_BAR';
 
 // Conversation Actions
 export const CMD_MUTE_CONVERSATION = 'CMD_MUTE_CONVERSATION';

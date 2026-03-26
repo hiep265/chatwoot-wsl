@@ -73,13 +73,13 @@ describe('useBranding', () => {
       expect(result).toBe('Welcome to our platform');
     });
 
-    it('should be case-sensitive for "Chatwoot"', () => {
+    it('should replace lowercase chatwoot references while leaving uppercase CHATWOOT unchanged', () => {
       const { replaceInstallationName } = useBranding();
       const result = replaceInstallationName(
         'Welcome to chatwoot and CHATWOOT'
       );
 
-      expect(result).toBe('Welcome to chatwoot and CHATWOOT');
+      expect(result).toBe('Welcome to MyCompany and CHATWOOT');
     });
 
     it('should handle special characters in installation name', () => {

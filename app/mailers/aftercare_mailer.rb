@@ -52,10 +52,10 @@ class AftercareMailer < ApplicationMailer
 
   def sender_email_address
     configured_address = @account.support_email.presence ||
-                         ENV.fetch('MAILER_SENDER_EMAIL', 'Chatwoot <accounts@chatwoot.com>')
+                         ENV.fetch('MAILER_SENDER_EMAIL', 'TA AI TECH <no-reply@taaitech.local>')
 
     Mail::Address.new(configured_address).address
   rescue Mail::Field::ParseError
-    'accounts@chatwoot.com'
+    'no-reply@taaitech.local'
   end
 end

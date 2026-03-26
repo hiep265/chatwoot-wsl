@@ -56,7 +56,7 @@ onMounted(() => {
           :src="
             note?.user?.name
               ? note?.user?.thumbnail
-              : '/assets/images/chatwoot_bot.png'
+              : '/brand-assets/logo_thumbnail.svg'
           "
           :size="16"
           rounded-full

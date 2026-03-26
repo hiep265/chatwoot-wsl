@@ -169,7 +169,7 @@ export default {
             v-model="commentWebhookUrl"
             type="text"
             class="h-9 flex-1 rounded-lg outline outline-1 outline-n-weak bg-n-background px-3 text-xs text-n-slate-12"
-            placeholder="http://chatbotlevan-api:8000/webhooks/chatwoot/comments"
+            placeholder="http://chatbotlevan-api:8000/webhooks/ta-ai-tech/comments"
             :disabled="isCommentWebhookLoading || isCommentWebhookSaving"
           />
           <NextButton

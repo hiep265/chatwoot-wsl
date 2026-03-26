@@ -4,6 +4,7 @@ import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
 import { LocalStorage } from 'shared/helpers/localStorage';
 import { mapGetters } from 'vuex';
 import { useAdmin } from 'dashboard/composables/useAdmin';
+import { getBrandUrl } from 'shared/helpers/branding';
 import { hasAnUpdateAvailable } from './versionCheckHelper';
 
 export default {
@@ -32,6 +33,9 @@ export default {
       return this.$t('GENERAL_SETTINGS.UPDATE_CHATWOOT', {
         latestChatwootVersion: this.latestChatwootVersion,
       });
+    },
+    learnMoreUrl() {
+      return getBrandUrl();
     },
     shouldShowBanner() {
       return (
@@ -73,7 +77,7 @@ export default {
     v-if="shouldShowBanner"
     color-scheme="primary"
     :banner-message="bannerMessage"
-    href-link="https://github.com/chatwoot/chatwoot/releases"
+    :href-link="learnMoreUrl"
     :href-link-text="$t('GENERAL_SETTINGS.LEARN_MORE')"
     has-close-button
     @close="dismissUpdateBanner"

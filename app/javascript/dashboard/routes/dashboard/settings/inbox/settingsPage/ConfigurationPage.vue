@@ -10,6 +10,7 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import TextArea from 'next/textarea/TextArea.vue';
 import WhatsappReauthorize from '../channels/whatsapp/Reauthorize.vue';
 import { sanitizeAllowedDomains } from 'dashboard/helper/URLHelper';
+import { getBrandName, getBrandUrl } from 'shared/helpers/branding';
 
 export default {
   components: {
@@ -52,6 +53,12 @@ export default {
     },
     isForwardingEnabled() {
       return !!this.inbox.forwarding_enabled;
+    },
+    brandDocsUrl() {
+      return getBrandUrl();
+    },
+    brandName() {
+      return getBrandName();
     },
   },
   watch: {
@@ -206,7 +213,7 @@ export default {
         <woot-code
           :script="inbox.web_widget_script"
           lang="html"
-          :codepen-title="`${inbox.name} - Chatwoot Widget Test`"
+          :codepen-title="`${inbox.name} - ${brandName} Widget Test`"
           enable-code-pen
         />
       </SettingsSection>
@@ -244,7 +251,7 @@ export default {
           <a
             target="_blank"
             rel="noopener noreferrer"
-            href="https://www.chatwoot.com/docs/product/channels/live-chat/sdk/identity-validation/"
+            :href="brandDocsUrl"
           >
             {{ $t('INBOX_MGMT.SETTINGS_POPUP.HMAC_LINK_TO_DOCS') }}
           </a>

@@ -19,7 +19,6 @@ import {
 } from './helper/pushHelper';
 import ReconnectService from 'dashboard/helper/ReconnectService';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import { scheduleAfterFirstPaint } from 'dashboard/helper/bootstrapHelper';
 
 export default {
   name: 'App',
@@ -52,7 +51,6 @@ export default {
     return {
       latestChatwootVersion: null,
       reconnectService: null,
-      cancelPostPaintAccountTasks: null,
     };
   },
   computed: {
@@ -87,7 +85,6 @@ export default {
     );
   },
   unmounted() {
-    this.cancelPostPaintAccountTasks?.();
     if (this.reconnectService) {
       this.reconnectService.disconnect();
     }
@@ -105,30 +102,26 @@ export default {
     },
     async initializeAccount() {
       await this.$store.dispatch('accounts/get');
+      this.$store.dispatch('setActiveAccount', {
+        accountId: this.currentAccountId,
+      });
       const { locale, latest_chatwoot_version: latestChatwootVersion } =
         this.getAccount(this.currentAccountId);
       const { pubsub_token: pubsubToken } = this.currentUser || {};
       // If user locale is set, use it; otherwise use account locale
       this.setLocale(this.uiSettings?.locale || locale);
       this.latestChatwootVersion = latestChatwootVersion;
-      this.cancelPostPaintAccountTasks?.();
-      this.cancelPostPaintAccountTasks = scheduleAfterFirstPaint(() => {
-        this.$store.dispatch('setActiveAccount', {
-          accountId: this.currentAccountId,
-        });
-        vueActionCable.init(this.store, pubsubToken);
-        this.reconnectService = new ReconnectService(this.store, this.router);
-        window.reconnectService = this.reconnectService;
+      vueActionCable.init(this.store, pubsubToken);
+      this.reconnectService = new ReconnectService(this.store, this.router);
+      window.reconnectService = this.reconnectService;
 
-        verifyServiceWorkerExistence(registration =>
-          registration.pushManager.getSubscription().then(subscription => {
-            if (subscription) {
-              registerSubscription();
-            }
-          })
-        );
-        this.cancelPostPaintAccountTasks = null;
-      });
+      verifyServiceWorkerExistence(registration =>
+        registration.pushManager.getSubscription().then(subscription => {
+          if (subscription) {
+            registerSubscription();
+          }
+        })
+      );
     },
   },
 };

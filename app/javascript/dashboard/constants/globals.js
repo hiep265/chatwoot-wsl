@@ -1,3 +1,7 @@
+import { getBrandUrl } from 'shared/helpers/branding';
+
+const brandUrl = getBrandUrl();
+
 export default {
   GRAVATAR_URL: 'https://www.gravatar.com/avatar/',
   ASSIGNEE_TYPE: {
@@ -31,9 +35,8 @@ export default {
     CONDENSED: 'condensed',
     EXPANDED: 'expanded',
   },
-  DOCS_URL: 'https://www.chatwoot.com/docs/product/',
-  HELP_CENTER_DOCS_URL:
-    'https://www.chatwoot.com/docs/product/others/help-center',
+  DOCS_URL: brandUrl,
+  HELP_CENTER_DOCS_URL: brandUrl,
   TESTIMONIAL_URL:
     'https://testimonials.cdn.chatwoot.com/testimonial-content.json',
   WHATSAPP_EMBEDDED_SIGNUP_DOCS_URL:

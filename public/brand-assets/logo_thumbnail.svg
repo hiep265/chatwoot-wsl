@@ -1,25 +1,21 @@
-<svg
-  width="16"
-  height="16"
-  viewBox="0 0 16 16"
-  fill="none"
-  xmlns="http://www.w3.org/2000/svg"
->
-  <g clip-path="url(#woot-logo-clip-2342424e23u32098)">
-    <path
-      d="M8 16C12.4183 16 16 12.4183 16 8C16 3.58172 12.4183 0 8 0C3.58172 0 0 3.58172 0 8C0 12.4183 3.58172 16 8 16Z"
-      fill="#2781F6"
-    />
-    <path
-      d="M11.4172 11.4172H7.70831C5.66383 11.4172 4 9.75328 4 7.70828C4 5.66394 5.66383 4 7.70835 4C9.75339 4 11.4172 5.66394 11.4172 7.70828V11.4172Z"
-      fill="white"
-      stroke="white"
-      stroke-width="0.1875"
-    />
-  </g>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <clipPath id="woot-logo-clip-2342424e23u32098">
-      <rect width="16" height="16" fill="white" />
-    </clipPath>
+    <linearGradient id="ta-tech-thumb-gradient" x1="68" y1="44" x2="430" y2="470" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00D4FF" />
+      <stop offset="0.55" stop-color="#3B82F6" />
+      <stop offset="1" stop-color="#00F5A0" />
+    </linearGradient>
+    <linearGradient id="ta-tech-thumb-stroke" x1="112" y1="100" x2="390" y2="416" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D1FAFF" stop-opacity="0.95" />
+      <stop offset="1" stop-color="#A7F3D0" stop-opacity="0.3" />
+    </linearGradient>
   </defs>
+  <path d="M256 34L422 130V382L256 478L90 382V130L256 34Z" fill="url(#ta-tech-thumb-gradient)" />
+  <path d="M256 82L378 152V360L256 430L134 360V152L256 82Z" fill="#08111F" fill-opacity="0.18" stroke="url(#ta-tech-thumb-stroke)" stroke-width="8" />
+  <path d="M160 190H352" stroke="white" stroke-width="40" stroke-linecap="round" />
+  <path d="M256 190V320" stroke="white" stroke-width="40" stroke-linecap="round" />
+  <path d="M198 336L256 252L314 336" stroke="#D1FAE5" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="256" cy="378" r="24" fill="#D1FAE5" />
+  <circle cx="160" cy="190" r="16" fill="white" fill-opacity="0.92" />
+  <circle cx="352" cy="190" r="16" fill="white" fill-opacity="0.92" />
 </svg>

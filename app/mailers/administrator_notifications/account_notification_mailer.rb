@@ -1,6 +1,7 @@
 class AdministratorNotifications::AccountNotificationMailer < AdministratorNotifications::BaseMailer
   def account_deletion_user_initiated(account, reason)
-    subject = 'Your Chatwoot account deletion has been scheduled'
+    brand_name = GlobalConfigService.load('BRAND_NAME', 'TA AI TECH')
+    subject = "Your #{brand_name} account deletion has been scheduled"
     action_url = settings_url('general')
     meta = {
       'account_name' => account.name,
@@ -12,7 +13,8 @@ class AdministratorNotifications::AccountNotificationMailer < AdministratorNotif
   end
 
   def account_deletion_for_inactivity(account, reason)
-    subject = 'Your Chatwoot account is scheduled for deletion due to inactivity'
+    brand_name = GlobalConfigService.load('BRAND_NAME', 'TA AI TECH')
+    subject = "Your #{brand_name} account is scheduled for deletion due to inactivity"
     action_url = settings_url('general')
     meta = {
       'account_name' => account.name,

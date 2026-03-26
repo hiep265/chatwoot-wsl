@@ -5,7 +5,6 @@ import { ref } from 'vue';
 import WootDropdownItem from 'shared/components/ui/dropdown/DropdownItem.vue';
 import WootDropdownMenu from 'shared/components/ui/dropdown/DropdownMenu.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
-import { openCommandBar } from 'dashboard/helper/commandbar/openCommandBar';
 
 const props = defineProps({
   showResolve: {
@@ -36,7 +35,8 @@ const updateConversations = key => {
   if (key === 'snoozed') {
     // If the user clicks on the snooze option from the bulk action change status dropdown.
     // Open the snooze option for bulk action in the cmd bar.
-    openCommandBar({ parent: 'bulk_action_snooze_conversation' });
+    const ninja = document.querySelector('ninja-keys');
+    ninja?.open({ parent: 'bulk_action_snooze_conversation' });
   } else {
     emit('update', key);
   }

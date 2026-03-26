@@ -246,7 +246,7 @@ const submit = () => {
             placeholder="khach@example.com"
           />
           <span class="text-xs text-n-slate-10">
-            Các bước ngoài 24 giờ sẽ gửi tới email này nếu Gmail/SMTP của Chatwoot đã
+            Các bước ngoài 24 giờ sẽ gửi tới email này nếu Gmail/SMTP của TA AI TECH đã
             sẵn sàng.
           </span>
         </label>

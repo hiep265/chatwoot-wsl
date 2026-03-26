@@ -1,5 +1,5 @@
 <script setup>
-import { h, ref, computed, onMounted, onUnmounted } from 'vue';
+import { h, ref, computed, onMounted } from 'vue';
 import { provideSidebarContext } from './provider';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useKbd } from 'dashboard/composables/utils/useKbd';
@@ -19,7 +19,6 @@ import ChannelLeaf from './ChannelLeaf.vue';
 import SidebarAccountSwitcher from './SidebarAccountSwitcher.vue';
 import Logo from 'next/icon/Logo.vue';
 import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
-import { scheduleAfterFirstPaint } from 'dashboard/helper/bootstrapHelper';
 
 const props = defineProps({
   isMobileSidebarOpen: {
@@ -72,23 +71,14 @@ const conversationCustomViews = useMapGetter(
   'customViews/getConversationCustomViews'
 );
 
-let cancelSidebarBootstrapPreload = null;
-
 onMounted(() => {
-  cancelSidebarBootstrapPreload = scheduleAfterFirstPaint(() => {
-    store.dispatch('labels/get');
-    store.dispatch('inboxes/get');
-    store.dispatch('notifications/unReadCount');
-    store.dispatch('teams/get');
-    store.dispatch('attributes/get');
-    store.dispatch('customViews/get', 'conversation');
-    store.dispatch('customViews/get', 'contact');
-    cancelSidebarBootstrapPreload = null;
-  });
-});
-
-onUnmounted(() => {
-  cancelSidebarBootstrapPreload?.();
+  store.dispatch('labels/get');
+  store.dispatch('inboxes/get');
+  store.dispatch('notifications/unReadCount');
+  store.dispatch('teams/get');
+  store.dispatch('attributes/get');
+  store.dispatch('customViews/get', 'conversation');
+  store.dispatch('customViews/get', 'contact');
 });
 
 const sortedInboxes = computed(() =>

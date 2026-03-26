@@ -7,6 +7,7 @@ import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import { getBrandName } from 'shared/helpers/branding';
 
 const props = defineProps({
   showSetup: {
@@ -38,6 +39,11 @@ const props = defineProps({
 const emit = defineEmits(['cancel', 'verify', 'complete']);
 
 const { t } = useI18n();
+const brandName = getBrandName();
+const backupCodesFileName = `${brandName
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-|-$/g, '')}-backup-codes.txt`;
 
 // Local state
 const setupStep = ref('qr');
@@ -99,12 +105,12 @@ const copyBackupCodes = async () => {
 };
 
 const downloadBackupCodes = () => {
-  const codesText = `Chatwoot Two-Factor Authentication Backup Codes\n\n${props.backupCodes.join('\n')}\n\nKeep these codes in a safe place.`;
+  const codesText = `${brandName} Two-Factor Authentication Backup Codes\n\n${props.backupCodes.join('\n')}\n\nKeep these codes in a safe place.`;
   const blob = new Blob([codesText], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'chatwoot-backup-codes.txt';
+  a.download = backupCodesFileName;
   a.click();
   URL.revokeObjectURL(url);
 };

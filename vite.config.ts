@@ -29,11 +29,26 @@ const frontendUrl = process.env.FRONTEND_URL
   ? new URL(process.env.FRONTEND_URL)
   : null;
 const frontendHostname = frontendUrl?.hostname;
+const isRemoteFrontend =
+  !!frontendHostname && !['localhost', '127.0.0.1'].includes(frontendHostname);
 const hmrHost = process.env.VITE_HMR_HOST;
 const hmrProtocol = process.env.VITE_HMR_PROTOCOL;
 const hmrClientPort = process.env.VITE_HMR_CLIENT_PORT
   ? Number(process.env.VITE_HMR_CLIENT_PORT)
   : undefined;
+const disableHmr =
+  process.env.VITE_DISABLE_HMR === 'true' || (isRemoteFrontend && !hmrHost);
+let hmr;
+
+if (disableHmr) {
+  hmr = false;
+} else if (hmrHost) {
+  hmr = {
+    host: hmrHost,
+    protocol: hmrProtocol,
+    clientPort: hmrClientPort,
+  };
+}
 
 const vueOptions = {
   template: {
@@ -61,13 +76,9 @@ export default defineConfig({
       '127.0.0.1',
       ...(frontendHostname ? [frontendHostname] : []),
     ],
-    hmr: hmrHost
-      ? {
-          host: hmrHost,
-          protocol: hmrProtocol,
-          clientPort: hmrClientPort,
-        }
-      : undefined,
+    // Remote HTTPS development without an explicit HMR endpoint tends to fall
+    // back to direct ws/wss connections on :3036 and floods the browser console.
+    hmr,
   },
   build: {
     rollupOptions: {

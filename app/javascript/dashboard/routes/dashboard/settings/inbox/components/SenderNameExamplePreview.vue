@@ -1,6 +1,9 @@
 <script>
 import PreviewCard from 'dashboard/components/ui/PreviewCard.vue';
 import Avatar from 'next/avatar/Avatar.vue';
+import { getBrandName } from 'shared/helpers/branding';
+
+const brandName = getBrandName();
 
 export default {
   components: {
@@ -31,7 +34,7 @@ export default {
           ),
           preview: {
             senderName: 'Smith',
-            businessName: 'Chatwoot',
+            businessName: brandName,
             email: '<support@yourbusiness.com>',
           },
         },
@@ -45,7 +48,7 @@ export default {
           ),
           preview: {
             senderName: '',
-            businessName: 'Chatwoot   ',
+            businessName: `${brandName}   `,
             email: '<support@yourbusiness.com>',
           },
         },

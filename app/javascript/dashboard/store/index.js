@@ -4,6 +4,7 @@ import accounts from './modules/accounts';
 import agents from './modules/agents';
 import articles from './modules/helpCenterArticles';
 import auth from './modules/auth';
+import attributes from './modules/attributes';
 import bulkActions from './modules/bulkActions';
 import cannedResponse from './modules/cannedResponse';
 import categories from './modules/helpCenterCategories';
@@ -54,6 +55,7 @@ export default createStore({
     agents,
     articles,
     auth,
+    attributes,
     bulkActions,
     cannedResponse,
     categories,

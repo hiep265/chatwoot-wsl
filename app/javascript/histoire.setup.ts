@@ -9,6 +9,7 @@ import { resizeObserver } from 'shared/directives/resizeObserver';
 import VueDOMPurifyHTML from 'vue-dompurify-html';
 import { domPurifyConfig } from 'shared/helpers/HTMLSanitizer.js';
 import { directive as onClickaway } from 'vue3-click-away';
+import { replaceBrandingText } from 'shared/helpers/branding';
 
 function mergeMessages(...sources) {
   return sources.reduce((acc, src) => {
@@ -34,6 +35,7 @@ const i18n = createI18n({
     structuredClone(dashboardI18n),
     structuredClone(widgetI18n)
   ),
+  postTranslation: replaceBrandingText,
 });
 
 export const setupVue3 = defineSetupVue3(({ app }) => {
