@@ -92,6 +92,9 @@ Rails.application.routes.draw do
             end
           end
           post 'ai_control/train_faq', to: 'ai_control#train_faq'
+          get 'ai_control/wiki_learning_schedule', to: 'ai_control#wiki_learning_schedule'
+          put 'ai_control/wiki_learning_schedule', to: 'ai_control#update_wiki_learning_schedule'
+          post 'ai_control/wiki_learning_schedule/run_now', to: 'ai_control#run_wiki_learning_schedule_now'
           get 'ai_control/payment_review_cases', to: 'ai_control#payment_review_cases'
           delete 'ai_control/payment_review_cases/:case_id', to: 'ai_control#delete_payment_review_case'
           post 'ai_control/payment_review_cases/:case_id/review', to: 'ai_control#review_payment_review_case'

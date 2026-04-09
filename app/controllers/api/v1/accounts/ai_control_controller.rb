@@ -50,6 +50,107 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     render json: { error: 'Unable to trigger FAQ training', detail: e.message }, status: :bad_gateway
   end
 
+  def wiki_learning_schedule
+    base_url = chatbotlevan_base_url
+    unless base_url.present?
+      render json: { error: 'CHATBOTLEVAN_BASE_URL is not configured' }, status: :unprocessable_entity
+      return
+    end
+
+    response = get_json("#{base_url}/learning/wiki/schedule/#{Current.account.id}")
+    status = response.code.to_i
+    body = parse_json_body(response.body)
+
+    if status.between?(200, 299)
+      render json: body, status: :ok
+      return
+    end
+
+    Rails.logger.error(
+      "[AiControl] wiki_learning_schedule_failed account_id=#{Current.account.id} status=#{status} body=#{response.body}"
+    )
+    render json: { error: 'Wiki learning schedule request failed', detail: body }, status: :bad_gateway
+  rescue StandardError => e
+    Rails.logger.error(
+      "[AiControl] wiki_learning_schedule_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}"
+    )
+    render json: { error: 'Unable to fetch wiki learning schedule', detail: e.message }, status: :bad_gateway
+  end
+
+  def update_wiki_learning_schedule
+    base_url = chatbotlevan_base_url
+    unless base_url.present?
+      render json: { error: 'CHATBOTLEVAN_BASE_URL is not configured' }, status: :unprocessable_entity
+      return
+    end
+
+    enabled = if params.key?(:enabled)
+      ActiveModel::Type::Boolean.new.cast(params[:enabled])
+    end
+    if enabled.nil?
+      render json: { error: 'enabled is required' }, status: :unprocessable_entity
+      return
+    end
+
+    time_of_day = normalize_time_of_day(params[:time_of_day])
+    if time_of_day.blank?
+      render json: { error: 'time_of_day is invalid' }, status: :unprocessable_entity
+      return
+    end
+
+    payload = {
+      enabled: enabled,
+      time_of_day: time_of_day,
+      timezone_name: normalize_timezone_name(params[:timezone_name])
+    }
+
+    response = put_json("#{base_url}/learning/wiki/schedule/#{Current.account.id}", payload)
+    status = response.code.to_i
+    body = parse_json_body(response.body)
+
+    if status.between?(200, 299)
+      render json: body, status: :ok
+      return
+    end
+
+    Rails.logger.error(
+      "[AiControl] update_wiki_learning_schedule_failed account_id=#{Current.account.id} status=#{status} body=#{response.body}"
+    )
+    render json: { error: 'Wiki learning schedule update request failed', detail: body }, status: :bad_gateway
+  rescue StandardError => e
+    Rails.logger.error(
+      "[AiControl] update_wiki_learning_schedule_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}"
+    )
+    render json: { error: 'Unable to update wiki learning schedule', detail: e.message }, status: :bad_gateway
+  end
+
+  def run_wiki_learning_schedule_now
+    base_url = chatbotlevan_base_url
+    unless base_url.present?
+      render json: { error: 'CHATBOTLEVAN_BASE_URL is not configured' }, status: :unprocessable_entity
+      return
+    end
+
+    response = post_json("#{base_url}/learning/wiki/schedule/#{Current.account.id}/run-now", {})
+    status = response.code.to_i
+    body = parse_json_body(response.body)
+
+    if status.between?(200, 299)
+      render json: body, status: :ok
+      return
+    end
+
+    Rails.logger.error(
+      "[AiControl] run_wiki_learning_schedule_failed account_id=#{Current.account.id} status=#{status} body=#{response.body}"
+    )
+    render json: { error: 'Wiki learning run-now request failed', detail: body }, status: :bad_gateway
+  rescue StandardError => e
+    Rails.logger.error(
+      "[AiControl] run_wiki_learning_schedule_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}"
+    )
+    render json: { error: 'Unable to run wiki learning now', detail: e.message }, status: :bad_gateway
+  end
+
   def payment_review_cases
     base_url = chatbotlevan_base_url
     unless base_url.present?
@@ -774,6 +875,14 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     raw.present? ? raw : 'Asia/Bangkok'
   end
 
+  def normalize_time_of_day(value)
+    raw = value.to_s.strip
+    return nil if raw.blank?
+    return raw if raw.match?(/\A(?:[01]\d|2[0-3]):[0-5]\d\z/)
+
+    nil
+  end
+
   def resolve_manager_day_window(target_date:, timezone_name:)
     zone = ActiveSupport::TimeZone[timezone_name] || ActiveSupport::TimeZone['Bangkok'] || Time.zone
     resolved_date = target_date.present? ? Date.iso8601(target_date) : zone.today
@@ -913,6 +1022,22 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     http.use_ssl = uri.scheme == 'https'
     http.open_timeout = 10
     http.read_timeout = 600
+    http.request(request)
+  end
+
+  def put_json(url, payload)
+    uri = URI.parse(url)
+    request = Net::HTTP::Put.new(uri.request_uri)
+    request['Content-Type'] = 'application/json'
+
+    token = ENV.fetch('CHATBOTLEVAN_API_TOKEN', '').to_s.strip
+    request['Authorization'] = "Bearer #{token}" if token.present?
+    request.body = payload.to_json
+
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = uri.scheme == 'https'
+    http.open_timeout = 10
+    http.read_timeout = 60
     http.request(request)
   end
 

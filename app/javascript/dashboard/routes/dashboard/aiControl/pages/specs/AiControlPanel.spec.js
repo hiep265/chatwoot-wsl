@@ -53,6 +53,9 @@ vi.mock('dashboard/api/aiControl', () => ({
     getManagerAiHandoffQueue: vi.fn(),
     listPaymentReviewCases: vi.fn(),
     getBlockedInboxes: vi.fn(),
+    getWikiLearningSchedule: vi.fn(),
+    updateWikiLearningSchedule: vi.fn(),
+    runWikiLearningNow: vi.fn(),
     getManagerCustomer360: vi.fn(),
     listAftercareSequences: vi.fn(),
     getAftercareEligibility: vi.fn(),
@@ -223,6 +226,36 @@ describe('AiControlPanel', () => {
     });
     AiControlAPI.getBlockedInboxes.mockResolvedValue({
       data: { blocked_inbox_ids: [] },
+    });
+    AiControlAPI.getWikiLearningSchedule.mockResolvedValue({
+      data: {
+        account_id: '1',
+        enabled: false,
+        time_of_day: '02:00',
+        timezone_name: 'Asia/Bangkok',
+      },
+    });
+    AiControlAPI.updateWikiLearningSchedule.mockResolvedValue({
+      data: {
+        account_id: '1',
+        enabled: true,
+        time_of_day: '04:30',
+        timezone_name: 'Asia/Bangkok',
+      },
+    });
+    AiControlAPI.runWikiLearningNow.mockResolvedValue({
+      data: {
+        status: 'completed',
+        account_id: '1',
+        source: 'manual',
+        schedule: {
+          account_id: '1',
+          enabled: false,
+          time_of_day: '02:00',
+          timezone_name: 'Asia/Bangkok',
+          run_history: [],
+        },
+      },
     });
     AiControlAPI.getManagerCustomer360.mockResolvedValue({ data: null });
     AiControlAPI.listAftercareSequences.mockResolvedValue({
@@ -1055,5 +1088,205 @@ describe('AiControlPanel', () => {
 
     expect(wrapper.vm.activeMainTab).toBe('aftercare');
     expect(mockRouter.push).not.toHaveBeenCalled();
+  });
+
+  it('loads wiki learning schedule on mount', async () => {
+    const wrapper = createWrapper();
+
+    await flushPromises();
+
+    expect(AiControlAPI.getWikiLearningSchedule).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('[data-test-id="wiki-learning-time"]').element.value).toBe(
+      '02:00'
+    );
+  });
+
+  it('saves wiki learning schedule changes', async () => {
+    const wrapper = createWrapper();
+
+    await flushPromises();
+    await wrapper.find('[data-test-id="wiki-learning-enabled"]').setValue(true);
+    await wrapper.find('[data-test-id="wiki-learning-time"]').setValue('04:30');
+
+    await findButtonByText(wrapper, 'Lưu lịch Wiki').trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.updateWikiLearningSchedule).toHaveBeenCalledWith({
+      enabled: true,
+      timeOfDay: '04:30',
+      timezoneName: 'Asia/Bangkok',
+    });
+  });
+
+  it('triggers wiki learning run now from the panel', async () => {
+    const wrapper = createWrapper();
+
+    await flushPromises();
+    await findButtonByText(wrapper, 'Chạy Wiki ngay').trigger('click');
+    await flushPromises();
+
+    expect(AiControlAPI.runWikiLearningNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders wiki learning run history from the schedule payload', async () => {
+    AiControlAPI.getWikiLearningSchedule.mockResolvedValueOnce({
+      data: {
+        account_id: '1',
+        enabled: true,
+        time_of_day: '02:00',
+        timezone_name: 'Asia/Bangkok',
+        run_history: [
+          {
+            status: 'completed',
+            source: 'manual',
+            started_at: '2026-03-18T01:05:00Z',
+            finished_at: '2026-03-18T01:10:00Z',
+            summary: {
+              chatwoot_learning: {
+                written_artifacts: 3,
+                errors: [],
+              },
+              telegram_learning: {
+                written_artifacts: 1,
+                errors: ['missing case binding'],
+              },
+              apply: {
+                applied: 2,
+                errors: [],
+              },
+            },
+            error: null,
+          },
+        ],
+      },
+    });
+
+    const wrapper = createWrapper();
+
+    await flushPromises();
+
+    const history = wrapper.find('[data-test-id="wiki-learning-run-history"]');
+
+    expect(history.exists()).toBe(true);
+    expect(history.text()).toContain('Hoàn tất');
+    expect(history.text()).toContain('Nguồn: manual');
+    expect(history.text()).toContain('Đã học 4');
+    expect(history.text()).toContain('Áp dụng 2');
+    expect(history.text()).toContain('Lỗi 1');
+    expect(
+      history.find('[data-test-id="wiki-learning-run-history-time-0"]').attributes('title')
+    ).toBe('2026-03-18T01:10:00Z');
+  });
+
+  it('updates wiki learning history after running now', async () => {
+    AiControlAPI.getWikiLearningSchedule.mockResolvedValueOnce({
+      data: {
+        account_id: '1',
+        enabled: true,
+        time_of_day: '02:00',
+        timezone_name: 'Asia/Bangkok',
+        run_history: [],
+      },
+    });
+    AiControlAPI.runWikiLearningNow.mockResolvedValueOnce({
+      data: {
+        schedule: {
+          account_id: '1',
+          enabled: true,
+          time_of_day: '02:00',
+          timezone_name: 'Asia/Bangkok',
+          run_history: [
+            {
+              status: 'completed',
+              source: 'manual',
+              started_at: '2026-03-18T02:05:00Z',
+              finished_at: '2026-03-18T02:15:00Z',
+              summary: {
+                chatwoot_learning: {
+                  written_artifacts: 2,
+                  errors: [],
+                },
+                telegram_learning: {
+                  written_artifacts: 1,
+                  errors: [],
+                },
+                apply: {
+                  applied: 2,
+                  errors: [],
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const wrapper = createWrapper();
+
+    await flushPromises();
+    await findButtonByText(wrapper, 'Chạy Wiki ngay').trigger('click');
+    await flushPromises();
+
+    const history = wrapper.find('[data-test-id="wiki-learning-run-history"]');
+
+    expect(AiControlAPI.runWikiLearningNow).toHaveBeenCalledTimes(1);
+    expect(history.exists()).toBe(true);
+    expect(history.text()).toContain('Nguồn: manual');
+    expect(history.text()).toContain('Đã học 3');
+    expect(history.text()).toContain('Áp dụng 2');
+  });
+
+  it('refetches wiki learning schedule after run now when payload has no schedule', async () => {
+    AiControlAPI.getWikiLearningSchedule
+      .mockResolvedValueOnce({
+        data: {
+          account_id: '1',
+          enabled: true,
+          time_of_day: '02:00',
+          timezone_name: 'Asia/Bangkok',
+          run_history: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          account_id: '1',
+          enabled: true,
+          time_of_day: '02:00',
+          timezone_name: 'Asia/Bangkok',
+          run_history: [
+            {
+              status: 'completed',
+              source: 'manual',
+              started_at: '2026-03-18T03:00:00Z',
+              finished_at: '2026-03-18T03:12:00Z',
+              summary: {
+                chatwoot_learning: { written_artifacts: 1, errors: [] },
+                telegram_learning: { written_artifacts: 0, errors: [] },
+                apply: { applied: 1, errors: [] },
+              },
+            },
+          ],
+        },
+      });
+    AiControlAPI.runWikiLearningNow.mockResolvedValueOnce({
+      data: {
+        status: 'completed',
+        account_id: '1',
+        source: 'manual',
+      },
+    });
+
+    const wrapper = createWrapper();
+
+    await flushPromises();
+    await findButtonByText(wrapper, 'Chạy Wiki ngay').trigger('click');
+    await flushPromises();
+
+    const history = wrapper.find('[data-test-id="wiki-learning-run-history"]');
+
+    expect(AiControlAPI.getWikiLearningSchedule).toHaveBeenCalledTimes(2);
+    expect(history.exists()).toBe(true);
+    expect(history.text()).toContain('Đã học 1');
+    expect(history.text()).toContain('Áp dụng 1');
   });
 });

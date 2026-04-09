@@ -24,6 +24,26 @@ class AiControlAPI extends ApiClient {
     });
   }
 
+  getWikiLearningSchedule() {
+    return axios.get(`${this.url}/wiki_learning_schedule`);
+  }
+
+  updateWikiLearningSchedule({
+    enabled,
+    timeOfDay,
+    timezoneName = 'Asia/Bangkok',
+  } = {}) {
+    return axios.put(`${this.url}/wiki_learning_schedule`, {
+      enabled,
+      time_of_day: timeOfDay,
+      timezone_name: timezoneName,
+    });
+  }
+
+  runWikiLearningNow() {
+    return axios.post(`${this.url}/wiki_learning_schedule/run_now`);
+  }
+
   listPaymentReviewCases({
     reviewStatus = 'payment_review_pending',
     segment,

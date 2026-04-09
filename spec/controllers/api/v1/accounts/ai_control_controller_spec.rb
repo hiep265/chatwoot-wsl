@@ -231,6 +231,110 @@ RSpec.describe 'AiControlController', type: :request do
     end
   end
 
+  describe 'GET/PUT/POST /api/v1/accounts/{account.id}/ai_control/wiki_learning_schedule' do
+    context 'when it is an authenticated user' do
+      let(:user) { create(:user, account: account, role: :administrator) }
+
+      it 'returns wiki learning schedule from chatbotlevan' do
+        with_modified_env(
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
+          'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
+          'CHATBOTLEVAN_API_TOKEN' => 'test-token'
+        ) do
+          stub_request(:get, "http://chatbotlevan.test/learning/wiki/schedule/#{account.id}")
+            .with(headers: { 'Authorization' => 'Bearer test-token' })
+            .to_return(
+              status: 200,
+              body: {
+                account_id: account.id.to_s,
+                enabled: true,
+                time_of_day: '03:30',
+                timezone_name: 'Asia/Bangkok'
+              }.to_json,
+              headers: { 'Content-Type' => 'application/json' }
+            )
+
+          get "/api/v1/accounts/#{account.id}/ai_control/wiki_learning_schedule",
+              headers: user.create_new_auth_token,
+              as: :json
+
+          expect(response).to have_http_status(:ok)
+          json = response.parsed_body
+          expect(json['account_id']).to eq(account.id.to_s)
+          expect(json['enabled']).to eq(true)
+          expect(json['time_of_day']).to eq('03:30')
+        end
+      end
+
+      it 'updates wiki learning schedule via chatbotlevan' do
+        with_modified_env(
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
+          'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
+          'CHATBOTLEVAN_API_TOKEN' => 'test-token'
+        ) do
+          stub_request(:put, "http://chatbotlevan.test/learning/wiki/schedule/#{account.id}")
+            .with(
+              headers: { 'Authorization' => 'Bearer test-token' },
+              body: {
+                enabled: true,
+                time_of_day: '04:15',
+                timezone_name: 'Asia/Bangkok'
+              }
+            )
+            .to_return(
+              status: 200,
+              body: {
+                account_id: account.id.to_s,
+                enabled: true,
+                time_of_day: '04:15',
+                timezone_name: 'Asia/Bangkok'
+              }.to_json,
+              headers: { 'Content-Type' => 'application/json' }
+            )
+
+          put "/api/v1/accounts/#{account.id}/ai_control/wiki_learning_schedule",
+              headers: user.create_new_auth_token,
+              params: { enabled: true, time_of_day: '04:15' },
+              as: :json
+
+          expect(response).to have_http_status(:ok)
+          json = response.parsed_body
+          expect(json['enabled']).to eq(true)
+          expect(json['time_of_day']).to eq('04:15')
+        end
+      end
+
+      it 'triggers wiki learning run now via chatbotlevan' do
+        with_modified_env(
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
+          'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
+          'CHATBOTLEVAN_API_TOKEN' => 'test-token'
+        ) do
+          stub_request(:post, "http://chatbotlevan.test/learning/wiki/schedule/#{account.id}/run-now")
+            .with(headers: { 'Authorization' => 'Bearer test-token' })
+            .to_return(
+              status: 200,
+              body: {
+                status: 'completed',
+                account_id: account.id.to_s,
+                source: 'manual'
+              }.to_json,
+              headers: { 'Content-Type' => 'application/json' }
+            )
+
+          post "/api/v1/accounts/#{account.id}/ai_control/wiki_learning_schedule/run_now",
+               headers: user.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:ok)
+          json = response.parsed_body
+          expect(json['status']).to eq('completed')
+          expect(json['source']).to eq('manual')
+        end
+      end
+    end
+  end
+
   describe 'GET /api/v1/accounts/{account.id}/ai_control/manager/*' do
     context 'when it is an authenticated user' do
       let(:user) { create(:user, account: account, role: :administrator) }

@@ -177,6 +177,21 @@ const isBlockedInboxesLoading = ref(false);
 const faqTrainingDays = ref(7);
 const isFaqTrainingLoading = ref(false);
 const faqTrainingReport = ref(null);
+const wikiLearningSchedule = ref(null);
+const wikiLearningEnabled = ref(false);
+const wikiLearningTimeOfDay = ref('03:00');
+const wikiLearningTimezoneName = ref('Asia/Bangkok');
+const isWikiLearningScheduleLoading = ref(false);
+const isWikiLearningScheduleSaving = ref(false);
+const isWikiLearningNowRunning = ref(false);
+const wikiLearningScheduleError = ref('');
+const wikiLearningRunHistory = computed(() => {
+  const rows = Array.isArray(wikiLearningSchedule.value?.run_history)
+    ? wikiLearningSchedule.value.run_history
+    : [];
+
+  return rows.slice(0, 3).map(normalizeWikiLearningRunHistoryEntry);
+});
 
 const riskConversationIds = ref(new Set());
 const isRiskBannerVisible = ref(false);
@@ -2329,6 +2344,130 @@ const aftercareDraftPreviewText = value => {
   return `${normalized.slice(0, AFTERCARE_DRAFT_PREVIEW_LIMIT).trimEnd()}...`;
 };
 
+const wikiLearningRunStatusText = value => {
+  const key = String(value || '').trim().toLowerCase();
+  const labels = {
+    completed: 'Hoàn tất',
+    success: 'Hoàn tất',
+    failed: 'Thất bại',
+    error: 'Lỗi',
+    running: 'Đang chạy',
+    in_progress: 'Đang chạy',
+    scheduled: 'Đã lên lịch',
+    pending: 'Đang chờ',
+    skipped: 'Bỏ qua',
+  };
+
+  return labels[key] || String(value || '').trim() || '—';
+};
+
+const wikiLearningRunSourceText = value => {
+  return String(value || '').trim() || '—';
+};
+
+const wikiLearningCountText = value => {
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue)) {
+    return numericValue.toLocaleString('vi-VN');
+  }
+
+  return String(value || '').trim();
+};
+
+const wikiLearningErrorCount = value => {
+  if (Array.isArray(value)) return value.length;
+  if (typeof value === 'string') {
+    return String(value).trim() ? 1 : 0;
+  }
+
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue)) {
+    return numericValue;
+  }
+
+  return 0;
+};
+
+const wikiLearningRunSummaryText = entry => {
+  const source = entry && typeof entry === 'object' ? entry : {};
+  const summary =
+    source.summary && typeof source.summary === 'object' ? source.summary : source;
+  const chatwootLearning =
+    summary.chatwoot_learning && typeof summary.chatwoot_learning === 'object'
+      ? summary.chatwoot_learning
+      : {};
+  const telegramLearning =
+    summary.telegram_learning && typeof summary.telegram_learning === 'object'
+      ? summary.telegram_learning
+      : {};
+  const apply =
+    summary.apply && typeof summary.apply === 'object' ? summary.apply : {};
+  const parts = [];
+  const learnedCount =
+    Number(chatwootLearning.written_artifacts || 0) +
+    Number(telegramLearning.written_artifacts || 0);
+  const appliedCount =
+    summary.applied_count ??
+    summary.applied ??
+    apply.applied_count ??
+    apply.applied;
+  const errorCount =
+    wikiLearningErrorCount(summary.errors) +
+    wikiLearningErrorCount(chatwootLearning.errors) +
+    wikiLearningErrorCount(telegramLearning.errors) +
+    wikiLearningErrorCount(apply.errors) +
+    wikiLearningErrorCount(source.error);
+
+  if (
+    learnedCount > 0 ||
+    summary.learned_count !== undefined ||
+    summary.learned !== undefined
+  ) {
+    parts.push(
+      `Đã học ${wikiLearningCountText(
+        learnedCount || summary.learned_count || summary.learned
+      )}`
+    );
+  }
+
+  if (appliedCount !== undefined) {
+    parts.push(`Áp dụng ${wikiLearningCountText(appliedCount)}`);
+  }
+
+  if (
+    errorCount > 0 ||
+    summary.error_count !== undefined ||
+    summary.errors !== undefined
+  ) {
+    parts.push(
+      `Lỗi ${wikiLearningCountText(errorCount || summary.error_count || summary.errors)}`
+    );
+  }
+
+  return parts.join(' · ');
+};
+
+const normalizeWikiLearningRunHistoryEntry = item => {
+  const data = item && typeof item === 'object' ? item : {};
+  const timeIso =
+    String(
+      data.run_at ||
+        data.completed_at ||
+        data.finished_at ||
+        data.created_at ||
+        data.started_at ||
+        ''
+    ).trim();
+
+  return {
+    statusText: wikiLearningRunStatusText(data.status),
+    sourceText: wikiLearningRunSourceText(data.source || data.source_type),
+    timeIso,
+    timeText: formatIsoDateTime(timeIso) || '—',
+    summaryText: wikiLearningRunSummaryText(data),
+  };
+};
+
 const runFaqTraining = async () => {
   const days = Number(faqTrainingDays.value || 0);
   if (!Number.isFinite(days) || days < 1 || days > 365) {
@@ -2364,6 +2503,90 @@ const runFaqTraining = async () => {
     useAlert(String(message));
   } finally {
     isFaqTrainingLoading.value = false;
+  }
+};
+
+const syncWikiLearningScheduleState = schedule => {
+  const data = schedule && typeof schedule === 'object' ? schedule : {};
+  wikiLearningSchedule.value = data;
+  wikiLearningEnabled.value = Boolean(data.enabled);
+  wikiLearningTimeOfDay.value =
+    String(data.time_of_day || data.timeOfDay || '03:00').trim() || '03:00';
+  wikiLearningTimezoneName.value =
+    String(data.timezone_name || data.timezoneName || 'Asia/Bangkok').trim() ||
+    'Asia/Bangkok';
+};
+
+const fetchWikiLearningSchedule = async () => {
+  isWikiLearningScheduleLoading.value = true;
+  wikiLearningScheduleError.value = '';
+
+  try {
+    const response = await AiControlAPI.getWikiLearningSchedule();
+    syncWikiLearningScheduleState(response?.data || {});
+  } catch (error) {
+    wikiLearningScheduleError.value =
+      error?.response?.data?.error ||
+      error?.response?.data?.detail ||
+      'Không tải được lịch học Wiki.';
+    useAlert(wikiLearningScheduleError.value);
+  } finally {
+    isWikiLearningScheduleLoading.value = false;
+  }
+};
+
+const saveWikiLearningSchedule = async () => {
+  if (isWikiLearningScheduleSaving.value) return;
+
+  isWikiLearningScheduleSaving.value = true;
+  wikiLearningScheduleError.value = '';
+
+  try {
+    const response = await AiControlAPI.updateWikiLearningSchedule({
+      enabled: wikiLearningEnabled.value,
+      timeOfDay: wikiLearningTimeOfDay.value,
+      timezoneName: wikiLearningTimezoneName.value,
+    });
+    syncWikiLearningScheduleState(response?.data || {});
+    useAlert('Đã lưu lịch học Wiki.');
+  } catch (error) {
+    wikiLearningScheduleError.value =
+      error?.response?.data?.error ||
+      error?.response?.data?.detail ||
+      'Không thể lưu lịch học Wiki.';
+    useAlert(wikiLearningScheduleError.value);
+  } finally {
+    isWikiLearningScheduleSaving.value = false;
+  }
+};
+
+const runWikiLearningNow = async () => {
+  if (isWikiLearningNowRunning.value) return;
+
+  isWikiLearningNowRunning.value = true;
+  wikiLearningScheduleError.value = '';
+
+  try {
+    const response = await AiControlAPI.runWikiLearningNow();
+    const payload = response?.data || {};
+    const nextSchedule =
+      payload.schedule && typeof payload.schedule === 'object'
+        ? payload.schedule
+        : null;
+    if (nextSchedule) {
+      syncWikiLearningScheduleState(nextSchedule);
+    } else {
+      await fetchWikiLearningSchedule();
+    }
+    useAlert('Đã gửi yêu cầu chạy Wiki ngay.');
+  } catch (error) {
+    wikiLearningScheduleError.value =
+      error?.response?.data?.error ||
+      error?.response?.data?.detail ||
+      'Không thể chạy Wiki ngay.';
+    useAlert(wikiLearningScheduleError.value);
+  } finally {
+    isWikiLearningNowRunning.value = false;
   }
 };
 
@@ -2857,6 +3080,7 @@ onMounted(() => {
   fetchManagerQueues();
   fetchPaymentReviewCases();
   fetchBlockedInboxes();
+  fetchWikiLearningSchedule();
   store.dispatch('inboxes/get');
   store.dispatch('labels/get');
   emitter.on(
@@ -3777,6 +4001,154 @@ onBeforeUnmount(() => {
                               Nguồn: {{ item.source_type }} · Trạng thái: {{ item.status }}
                             </div>
                           </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Wiki Learning Schedule -->
+                <div
+                  class="rounded-2xl outline outline-1 outline-n-slate-4 bg-n-solid-1 shadow-sm overflow-hidden"
+                >
+                  <div class="px-5 py-4 border-b border-n-slate-3 bg-n-solid-2">
+                    <div
+                      class="text-base font-semibold tracking-tight text-n-slate-12"
+                    >
+                      📖 Wiki Learning Schedule
+                    </div>
+                    <div class="mt-0.5 text-xs text-n-slate-11">
+                      Bật/tắt lịch học Wiki, chỉnh giờ chạy và kích hoạt ngay khi cần
+                    </div>
+                  </div>
+                  <div class="p-5 flex flex-col gap-4">
+                    <div
+                      v-if="wikiLearningScheduleError"
+                      class="rounded-xl border border-n-ruby-4 bg-n-ruby-2 px-4 py-3 text-xs font-medium text-n-ruby-11"
+                    >
+                      {{ wikiLearningScheduleError }}
+                    </div>
+                    <div
+                      v-if="isWikiLearningScheduleLoading"
+                      class="flex items-center gap-2 rounded-xl border border-dashed border-n-slate-4 bg-n-solid-2/40 px-4 py-3 text-xs text-n-slate-11"
+                    >
+                      <div class="w-4 h-4 rounded-full border-2 border-n-blue-9 border-t-transparent animate-spin"></div>
+                      Đang tải lịch học Wiki...
+                    </div>
+                    <label class="flex items-center justify-between gap-3 rounded-xl border border-n-slate-3 bg-n-slate-2/40 px-4 py-3">
+                      <div>
+                        <div class="text-sm font-semibold text-n-slate-12">
+                          Kích hoạt lịch học
+                        </div>
+                        <div class="mt-0.5 text-xs text-n-slate-11">
+                          Tắt lịch để dừng đồng bộ Wiki tự động
+                        </div>
+                      </div>
+                      <input
+                        data-test-id="wiki-learning-enabled"
+                        v-model="wikiLearningEnabled"
+                        type="checkbox"
+                        class="h-5 w-5 rounded border-n-slate-4 text-n-blue-9 focus:ring-n-blue-6"
+                      />
+                    </label>
+                    <div class="flex flex-col gap-1.5">
+                      <label
+                        class="text-xs font-medium text-n-slate-12"
+                        for="wiki-learning-time"
+                      >
+                        Giờ chạy
+                      </label>
+                      <input
+                        id="wiki-learning-time"
+                        data-test-id="wiki-learning-time"
+                        v-model="wikiLearningTimeOfDay"
+                        type="time"
+                        class="h-10 rounded-xl outline outline-1 outline-n-slate-4 bg-n-background px-3 text-sm font-medium text-n-slate-12 focus:outline-n-blue-6 focus:ring-2 focus:ring-n-blue-4/20 transition-all"
+                      />
+                    </div>
+                    <div class="flex flex-col gap-2 sm:flex-row">
+                      <Button
+                        color="blue"
+                        size="sm"
+                        class="h-10 flex-1 shadow-sm transition-transform active:scale-95"
+                        :is-loading="isWikiLearningScheduleSaving"
+                        label="Lưu lịch Wiki"
+                        @click="saveWikiLearningSchedule"
+                      />
+                      <Button
+                        color="slate"
+                        size="sm"
+                        class="h-10 flex-1 shadow-sm transition-transform active:scale-95"
+                        :is-loading="isWikiLearningNowRunning"
+                        label="Chạy Wiki ngay"
+                        @click="runWikiLearningNow"
+                      />
+                    </div>
+                    <div class="rounded-xl border border-n-slate-3 bg-n-solid-2/40 px-4 py-3 text-xs text-n-slate-11">
+                      <div class="flex items-center justify-between gap-3">
+                        <span class="font-medium text-n-slate-12">Trạng thái</span>
+                        <span
+                          class="rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                          :class="wikiLearningEnabled ? 'bg-n-teal-3 text-n-teal-12' : 'bg-n-slate-3 text-n-slate-11'"
+                        >
+                          {{ wikiLearningEnabled ? 'Đang bật' : 'Đang tắt' }}
+                        </span>
+                      </div>
+                      <div class="mt-2">
+                        Giờ hiện tại:
+                        <span class="font-semibold text-n-slate-12">{{ wikiLearningTimeOfDay || '—' }}</span>
+                      </div>
+                      <div class="mt-3 border-t border-n-slate-3 pt-3">
+                        <div class="flex items-center justify-between gap-3">
+                          <span class="font-medium text-n-slate-12">Lịch sử chạy gần đây</span>
+                          <span class="text-[10px] uppercase tracking-wider text-n-slate-10">
+                            Tối đa 3 lần
+                          </span>
+                        </div>
+                        <div
+                          v-if="wikiLearningRunHistory.length"
+                          data-test-id="wiki-learning-run-history"
+                          class="mt-2 flex flex-col gap-2"
+                        >
+                          <div
+                            v-for="(item, index) in wikiLearningRunHistory"
+                            :key="`${item.timeIso || index}-${index}`"
+                            :data-test-id="`wiki-learning-run-history-item-${index}`"
+                            class="rounded-lg border border-n-slate-3 bg-n-background px-3 py-2"
+                          >
+                            <div class="flex items-start justify-between gap-3">
+                              <div class="min-w-0">
+                                <div class="text-sm font-semibold text-n-slate-12">
+                                  {{ item.statusText }}
+                                </div>
+                                <div class="mt-0.5 text-[11px] text-n-slate-11">
+                                  Nguồn: {{ item.sourceText }} ·
+                                  <span
+                                    :data-test-id="`wiki-learning-run-history-time-${index}`"
+                                    :title="item.timeIso || ''"
+                                  >
+                                    {{ item.timeText }}
+                                  </span>
+                                </div>
+                              </div>
+                              <span class="rounded-full bg-n-slate-3 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-n-slate-11">
+                                {{ item.statusText }}
+                              </span>
+                            </div>
+                            <div
+                              v-if="item.summaryText"
+                              class="mt-1 text-[11px] text-n-slate-11"
+                            >
+                              {{ item.summaryText }}
+                            </div>
+                          </div>
+                        </div>
+                        <div
+                          v-else
+                          data-test-id="wiki-learning-run-history-empty"
+                          class="mt-2 rounded-lg border border-dashed border-n-slate-3 bg-n-slate-2/40 px-3 py-2 text-[11px] text-n-slate-11"
+                        >
+                          Chưa có lịch sử chạy gần đây.
                         </div>
                       </div>
                     </div>
