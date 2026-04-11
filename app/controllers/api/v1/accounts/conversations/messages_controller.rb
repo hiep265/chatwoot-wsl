@@ -66,7 +66,11 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
   end
 
   def message_finder
-    @message_finder ||= MessageFinder.new(@conversation, params)
+    @message_finder ||= MessageFinder.new(@conversation, message_finder_params)
+  end
+
+  def message_finder_params
+    params.permit(:before, :after).to_h.symbolize_keys.merge(include_session_trace: true)
   end
 
   def permitted_params

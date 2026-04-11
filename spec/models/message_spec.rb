@@ -6,7 +6,7 @@ require Rails.root.join 'spec/models/concerns/liquidable_shared.rb'
 RSpec.describe Message do
   before do
     # rubocop:disable RSpec/AnyInstance
-    allow_any_instance_of(described_class).to receive(:reindex_for_search).and_return(true)
+    allow_any_instance_of(Message).to receive(:reindex_for_search).and_return(true)
     # rubocop:enable RSpec/AnyInstance
   end
 
@@ -99,7 +99,8 @@ RSpec.describe Message do
         { type: :incoming, expected: true },
         { type: :outgoing, expected: true },
         { type: :template, expected: true },
-        { type: :activity, expected: false }
+        { type: :activity, expected: false },
+        { type: :session_trace, expected: false }
       ].each do |scenario|
         it "returns #{scenario[:expected]} for #{scenario[:type]} message" do
           message = create(:message, message_type: scenario[:type])
@@ -151,6 +152,32 @@ RSpec.describe Message do
 
     it 'returns push event payload' do
       expect(push_event_data).to eq(expected_data)
+    end
+  end
+
+  describe Message::ContentAttributesCoder do
+    describe '.load' do
+      it 'loads hash values returned by direct-db json rows' do
+        payload = {
+          'trace_type' => 'kimi_context_message',
+          'context_message' => {
+            'role' => 'assistant',
+            'content' => 'trace row'
+          }
+        }
+
+        expect(described_class.load(payload)).to eq(payload)
+      end
+
+      it 'loads legacy double-serialized json strings' do
+        payload = {
+          'is_bot_generated' => true,
+          'external_error' => 'sample'
+        }
+        raw_value = ActiveSupport::JSON.encode(ActiveSupport::JSON.encode(payload))
+
+        expect(described_class.load(raw_value)).to eq(payload)
+      end
     end
   end
 
@@ -388,6 +415,23 @@ RSpec.describe Message do
       old_waiting_since = conversation.waiting_since
       message.message_type = :incoming
       message.save!
+      conversation.reload
+
+      expect(conversation.waiting_since).to eq old_waiting_since
+    end
+
+    it 'does not change waiting_since for session trace messages' do
+      old_waiting_since = conversation.waiting_since
+      trace = build(
+        :message,
+        conversation: conversation,
+        account: conversation.account,
+        inbox: conversation.inbox,
+        message_type: :session_trace,
+        private: true
+      )
+
+      trace.save!
       conversation.reload
 
       expect(conversation.waiting_since).to eq old_waiting_since

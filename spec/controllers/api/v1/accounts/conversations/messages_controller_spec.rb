@@ -184,6 +184,91 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(response).to have_http_status(:success)
         expect(JSON.parse(response.body, symbolize_names: true)[:meta][:contact][:id]).to eq(conversation.contact_id)
       end
+
+      it 'includes session trace messages in the internal timeline payload' do
+        create(:message, conversation: conversation, account: account, content: 'customer message')
+        trace_message = create(
+          :message,
+          conversation: conversation,
+          account: account,
+          message_type: :session_trace,
+          private: true,
+          sender: nil,
+          content: 'agent trace debug block',
+          content_attributes: {
+            trace_type: 'kimi_context_message',
+            context_message: {
+              role: 'assistant',
+              content: 'agent trace debug block'
+            },
+            source: {
+              trigger_message_id: '999'
+            }
+          }
+        )
+
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        payload = JSON.parse(response.body, symbolize_names: true)[:payload]
+        returned_trace = payload.find { |message| message[:id] == trace_message.id }
+
+        expect(returned_trace).to include(
+          id: trace_message.id,
+          message_type: 4,
+          private: true,
+          content: 'agent trace debug block'
+        )
+      end
+
+      it 'renders direct-db session trace rows with object content_attributes' do
+        create(:message, conversation: conversation, account: account, content: 'customer message')
+        insert_result = Message.insert_all!(
+          [
+            {
+              account_id: account.id,
+              inbox_id: conversation.inbox_id,
+              conversation_id: conversation.id,
+              message_type: Message.message_types[:session_trace],
+              private: true,
+              content_type: Message.content_types[:text],
+              status: Message.statuses[:sent],
+              content: 'raw session trace row',
+              content_attributes: {
+                trace_type: 'kimi_context_message',
+                context_message: {
+                  role: 'assistant',
+                  content: 'raw session trace row'
+                },
+                source: {
+                  trigger_message_id: '1000'
+                }
+              },
+              created_at: Time.current,
+              updated_at: Time.current
+            }
+          ],
+          returning: %w[id]
+        )
+        trace_message_id = insert_result.rows.first.first
+
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        payload = JSON.parse(response.body, symbolize_names: true)[:payload]
+        returned_trace = payload.find { |message| message[:id] == trace_message_id }
+
+        expect(returned_trace).to include(
+          id: trace_message_id,
+          message_type: 4,
+          private: true,
+          content: 'raw session trace row'
+        )
+      end
     end
   end
 

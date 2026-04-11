@@ -103,6 +103,26 @@ const actions = {
     }
   },
 
+  fetchLatestMessages: async ({ commit }, { conversationId }) => {
+    try {
+      const {
+        data: { meta, payload },
+      } = await MessageApi.getPreviousMessages({
+        conversationId,
+      });
+      commit(`conversationMetadata/${types.SET_CONVERSATION_METADATA}`, {
+        id: conversationId,
+        data: meta,
+      });
+      commit(types.SET_MISSING_MESSAGES, {
+        id: conversationId,
+        data: payload,
+      });
+    } catch (error) {
+      // Handle error
+    }
+  },
+
   fetchAllAttachments: async ({ commit }, conversationId) => {
     let attachments = [];
 
@@ -192,14 +212,12 @@ const actions = {
     });
   },
 
-  async setActiveChat({ commit, dispatch }, { data, after }) {
+  async setActiveChat({ commit, dispatch }, { data }) {
     commit(types.SET_CURRENT_CHAT_WINDOW, data);
     commit(types.CLEAR_ALL_MESSAGES_LOADED);
     if (data.dataFetched === undefined) {
       try {
-        await dispatch('fetchPreviousMessages', {
-          after,
-          before: data.messages[0].id,
+        await dispatch('fetchLatestMessages', {
           conversationId: data.id,
         });
         data.dataFetched = true;

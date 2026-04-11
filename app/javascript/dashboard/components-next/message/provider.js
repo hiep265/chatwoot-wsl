@@ -71,9 +71,9 @@ const MessageControl = Symbol('MessageControl');
 /**
  * @typedef {'sent'|'delivered'|'read'|'failed'|'progress'} MessageStatus
  * @typedef {'text'|'input_text'|'input_textarea'|'input_email'|'input_select'|'cards'|'form'|'article'|'incoming_email'|'input_csat'|'integrations'|'sticker'} MessageContentType
- * @typedef {0|1|2|3} MessageType
+ * @typedef {0|1|2|3|4} MessageType
  * @typedef {'contact'|'user'|'Contact'|'User'} SenderType
- * @typedef {'user'|'agent'|'activity'|'private'|'bot'|'error'|'template'|'email'|'unsupported'} MessageVariant
+ * @typedef {'user'|'agent'|'activity'|'private'|'bot'|'error'|'template'|'email'|'trace'|'unsupported'} MessageVariant
  * @typedef {'left'|'center'|'right'} MessageOrientation
 
  * @typedef {Object} MessageContext

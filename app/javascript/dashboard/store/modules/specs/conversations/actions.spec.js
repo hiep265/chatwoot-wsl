@@ -457,6 +457,72 @@ describe('#actions', () => {
     });
   });
 
+  describe('#fetchLatestMessages', () => {
+    it('replaces the active timeline with the latest internal message window', async () => {
+      axios.get.mockResolvedValue({
+        data: {
+          payload: [
+            { id: 5352, message_type: 4, content: 'bootstrap trace' },
+            { id: 5354, message_type: 1, content: 'visible reply' },
+            { id: 5371, message_type: 4, content: 'current turn trace' },
+          ],
+          meta: {
+            agent_last_seen_at: '2026-04-10T17:27:42.000Z',
+          },
+        },
+      });
+
+      await actions.fetchLatestMessages({ commit }, { conversationId: 290 });
+
+      expect(commit.mock.calls).toEqual([
+        [
+          'conversationMetadata/SET_CONVERSATION_METADATA',
+          {
+            id: 290,
+            data: {
+              agent_last_seen_at: '2026-04-10T17:27:42.000Z',
+            },
+          },
+        ],
+        [
+          types.SET_MISSING_MESSAGES,
+          {
+            id: 290,
+            data: [
+              { id: 5352, message_type: 4, content: 'bootstrap trace' },
+              { id: 5354, message_type: 1, content: 'visible reply' },
+              { id: 5371, message_type: 4, content: 'current turn trace' },
+            ],
+          },
+        ],
+      ]);
+    });
+  });
+
+  describe('#setActiveChat', () => {
+    it('loads the latest timeline window instead of fetching only older messages from the seed message', async () => {
+      const selectedConversation = {
+        id: 290,
+        messages: [{ id: 5354, message_type: 1, content: 'seed message' }],
+      };
+      const localDispatch = vi.fn().mockResolvedValue(undefined);
+
+      await actions.setActiveChat(
+        { commit, dispatch: localDispatch },
+        { data: selectedConversation }
+      );
+
+      expect(commit.mock.calls).toEqual([
+        [types.SET_CURRENT_CHAT_WINDOW, selectedConversation],
+        [types.CLEAR_ALL_MESSAGES_LOADED],
+      ]);
+      expect(localDispatch.mock.calls).toEqual([
+        ['fetchLatestMessages', { conversationId: 290 }],
+      ]);
+      expect(selectedConversation.dataFetched).toBe(true);
+    });
+  });
+
   describe('#clearConversationFilter', () => {
     it('commits the correct mutation and clears filter state', () => {
       actions.clearConversationFilters({ commit });

@@ -39,6 +39,36 @@
 #
 
 class Message < ApplicationRecord
+  class ContentAttributesCoder
+    class << self
+      def load(value)
+        normalize(value)
+      end
+
+      def dump(value)
+        normalize(value)
+      end
+
+      private
+
+      def normalize(value)
+        case value
+        when nil
+          {}
+        when Hash
+          value.stringify_keys
+        when String
+          decoded = ActiveSupport::JSON.decode(value)
+          normalize(decoded)
+        else
+          {}
+        end
+      rescue JSON::ParserError, TypeError
+        {}
+      end
+    end
+  end
+
   searchkick callbacks: false if ChatwootApp.advanced_search_allowed?
 
   include MessageFilterHelpers
@@ -85,7 +115,7 @@ class Message < ApplicationRecord
   # when you have a temperory id in your frontend and want it echoed back via action cable
   attr_accessor :echo_id
 
-  enum message_type: { incoming: 0, outgoing: 1, activity: 2, template: 3 }
+  enum message_type: { incoming: 0, outgoing: 1, activity: 2, template: 3, session_trace: 4 }
   enum content_type: {
     text: 0,
     input_text: 1,
@@ -111,13 +141,14 @@ class Message < ApplicationRecord
   # [:data] : Used for structured content types such as voice_call
   store :content_attributes, accessors: [:submitted_email, :items, :submitted_values, :email, :in_reply_to, :deleted,
                                          :external_created_at, :story_sender, :story_id, :external_error,
-                                         :translations, :in_reply_to_external_id, :is_unsupported, :data], coder: JSON
+                                         :translations, :in_reply_to_external_id, :is_unsupported, :data],
+                              coder: ContentAttributesCoder
 
   store :external_source_ids, accessors: [:slack], coder: JSON, prefix: :external_source_id
 
   scope :created_since, ->(datetime) { where('created_at > ?', datetime) }
-  scope :chat, -> { where.not(message_type: :activity).where(private: false) }
-  scope :non_activity_messages, -> { where.not(message_type: :activity).reorder('id desc') }
+  scope :chat, -> { where.not(message_type: [:activity, :session_trace]).where(private: false) }
+  scope :non_activity_messages, -> { where.not(message_type: [:activity, :session_trace]).reorder('id desc') }
   scope :today, -> { where("date_trunc('day', created_at) = ?", Date.current) }
   scope :voice_calls, -> { where(content_type: :voice_call) }
 
@@ -311,6 +342,8 @@ class Message < ApplicationRecord
   end
 
   def execute_after_create_commit_callbacks
+    return if session_trace?
+
     # rails issue with order of active record callbacks being executed https://github.com/rails/rails/issues/20911
     reopen_conversation
     clear_handoff_labels_on_non_bot_message

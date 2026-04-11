@@ -3,6 +3,7 @@ export const MESSAGE_TYPES = {
   OUTGOING: 1,
   ACTIVITY: 2,
   TEMPLATE: 3,
+  SESSION_TRACE: 4,
 };
 
 export const MESSAGE_VARIANTS = {
@@ -14,6 +15,7 @@ export const MESSAGE_VARIANTS = {
   ERROR: 'error',
   TEMPLATE: 'template',
   EMAIL: 'email',
+  TRACE: 'trace',
   UNSUPPORTED: 'unsupported',
 };
 

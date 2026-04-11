@@ -38,6 +38,7 @@ import LocationBubble from './bubbles/Location.vue';
 import CSATBubble from './bubbles/CSAT.vue';
 import FormBubble from './bubbles/Form.vue';
 import VoiceCallBubble from './bubbles/VoiceCall.vue';
+import TraceBubble from './bubbles/Trace.vue';
 
 import MessageError from './MessageError.vue';
 import ContextMenu from 'dashboard/modules/conversations/components/MessageContextMenu.vue';
@@ -145,6 +146,10 @@ const route = useRoute();
  * @type {import('vue').ComputedRef<'user'|'agent'|'activity'|'private'|'bot'|'template'>}
  */
 const variant = computed(() => {
+  if (props.messageType === MESSAGE_TYPES.SESSION_TRACE) {
+    return MESSAGE_VARIANTS.TRACE;
+  }
+
   if (props.private) return MESSAGE_VARIANTS.PRIVATE;
 
   if (props.isEmailInbox) {
@@ -212,6 +217,10 @@ const isBotOrAgentMessage = computed(() => {
  * @returns {import('vue').ComputedRef<'left'|'right'|'center'>} The computed orientation
  */
 const orientation = computed(() => {
+  if (props.messageType === MESSAGE_TYPES.SESSION_TRACE) {
+    return ORIENTATION.CENTER;
+  }
+
   if (isBotOrAgentMessage.value) {
     return ORIENTATION.RIGHT;
   }
@@ -235,6 +244,7 @@ const gridClass = computed(() => {
   const map = {
     [ORIENTATION.LEFT]: 'grid grid-cols-1fr',
     [ORIENTATION.RIGHT]: 'grid grid-cols-[1fr_24px]',
+    [ORIENTATION.CENTER]: 'grid grid-cols-1fr',
   };
 
   return map[orientation.value];
@@ -250,6 +260,10 @@ const gridTemplate = computed(() => {
       "bubble avatar"
       "meta spacer"
     `,
+    [ORIENTATION.CENTER]: `
+      "bubble"
+      "meta"
+    `,
   };
 
   return map[orientation.value];
@@ -257,18 +271,24 @@ const gridTemplate = computed(() => {
 
 const shouldGroupWithNext = computed(() => {
   if (props.status === MESSAGE_STATUS.FAILED) return false;
+  if (props.messageType === MESSAGE_TYPES.SESSION_TRACE) return false;
 
   return props.groupWithNext;
 });
 
 const shouldShowAvatar = computed(() => {
   if (props.messageType === MESSAGE_TYPES.ACTIVITY) return false;
+  if (props.messageType === MESSAGE_TYPES.SESSION_TRACE) return false;
   if (orientation.value === ORIENTATION.LEFT) return false;
 
   return true;
 });
 
 const componentToRender = computed(() => {
+  if (props.messageType === MESSAGE_TYPES.SESSION_TRACE) {
+    return TraceBubble;
+  }
+
   if (props.isEmailInbox && !props.private) {
     const emailInboxTypes = [MESSAGE_TYPES.INCOMING, MESSAGE_TYPES.OUTGOING];
     if (emailInboxTypes.includes(props.messageType)) return EmailBubble;
@@ -380,13 +400,20 @@ const shouldRenderMessage = computed(() => {
   const isUnsupported = props.contentAttributes?.isUnsupported;
   const isAnIntegrationMessage =
     props.contentType === CONTENT_TYPES.INTEGRATIONS;
+  const hasTraceContext =
+    props.messageType === MESSAGE_TYPES.SESSION_TRACE &&
+    !!(
+      props.contentAttributes?.contextMessage ||
+      props.contentAttributes?.context_message
+    );
 
   return (
     hasAttachments ||
     props.content ||
     isEmailContentType ||
     isUnsupported ||
-    isAnIntegrationMessage
+    isAnIntegrationMessage ||
+    hasTraceContext
   );
 });
 

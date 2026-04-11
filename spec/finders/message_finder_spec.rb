@@ -32,9 +32,107 @@ describe MessageFinder do
     context 'with filter_internal_messages true' do
       let(:params) { { filter_internal_messages: true } }
 
+      before do
+        create(:message, message_type: 'session_trace', private: true, account: account, inbox: inbox, conversation: conversation)
+      end
+
       it 'filter conversations by status' do
         result = message_finder.perform
         expect(result.count).to be 4
+        expect(result.map(&:message_type)).not_to include('session_trace')
+      end
+    end
+
+    context 'without internal filtering' do
+      let(:params) { {} }
+
+      before do
+        create(:message, message_type: 'session_trace', private: true, account: account, inbox: inbox, conversation: conversation)
+      end
+
+      it 'does not include session trace rows in the default timeline' do
+        result = message_finder.perform
+
+        expect(result.map(&:message_type)).not_to include('session_trace')
+      end
+    end
+
+    context 'when including session trace in the internal timeline window' do
+      let(:params) { { include_session_trace: true } }
+
+      before do
+        create(:message, message_type: 'incoming', content: 'customer-1', account: account, inbox: inbox, conversation: conversation)
+        create(:message, message_type: 'outgoing', content: 'agent-1', account: account, inbox: inbox, conversation: conversation)
+        create(:message, message_type: 'incoming', content: 'customer-2', account: account, inbox: inbox, conversation: conversation)
+
+        25.times do |index|
+          create(
+            :message,
+            message_type: 'session_trace',
+            private: true,
+            content: "trace-#{index}",
+            account: account,
+            inbox: inbox,
+            conversation: conversation
+          )
+        end
+      end
+
+      it 'keeps earlier visible chat messages instead of letting trace rows evict them' do
+        result = message_finder.perform
+
+        expect(result.map(&:content)).to include('customer-1', 'agent-1', 'customer-2')
+        expect(result.map(&:content)).to include('trace-19')
+        expect(result.length).to be > 20
+      end
+    end
+
+    context 'when session trace rows share the same created_at timestamp' do
+      let(:params) { { include_session_trace: true } }
+      let(:shared_time) { Time.zone.parse('2026-04-11 00:27:00') }
+      let!(:visible_message) do
+        create(
+          :message,
+          message_type: 'incoming',
+          content: 'customer-visible',
+          created_at: shared_time,
+          updated_at: shared_time,
+          account: account,
+          inbox: inbox,
+          conversation: conversation
+        )
+      end
+      let!(:trace_one) do
+        create(
+          :message,
+          message_type: 'session_trace',
+          private: true,
+          content: 'trace-one',
+          created_at: shared_time,
+          updated_at: shared_time,
+          account: account,
+          inbox: inbox,
+          conversation: conversation
+        )
+      end
+      let!(:trace_two) do
+        create(
+          :message,
+          message_type: 'session_trace',
+          private: true,
+          content: 'trace-two',
+          created_at: shared_time,
+          updated_at: shared_time,
+          account: account,
+          inbox: inbox,
+          conversation: conversation
+        )
+      end
+
+      it 'orders rows by created_at and id ascending' do
+        result = message_finder.perform.select { |message| [visible_message.id, trace_one.id, trace_two.id].include?(message.id) }
+
+        expect(result.map(&:id)).to eq([visible_message.id, trace_one.id, trace_two.id])
       end
     end
 

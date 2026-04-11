@@ -34,6 +34,30 @@ RSpec.describe 'Conversations API', type: :request do
         expect(body[:data][:payload].first[:messages].first[:id]).to eq(message.id)
       end
 
+      it 'returns the last non-session-trace message in the conversation payload' do
+        visible_message = create(:message, conversation: conversation, account: account, message_type: :outgoing)
+        create(
+          :message,
+          conversation: conversation,
+          account: account,
+          message_type: :session_trace,
+          private: true,
+          sender: nil,
+          content_attributes: {
+            trace_type: 'kimi_context_message',
+            context_message: { role: 'assistant', content: 'internal trace' }
+          }
+        )
+
+        get "/api/v1/accounts/#{account.id}/conversations",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        body = JSON.parse(response.body, symbolize_names: true)
+        expect(body[:data][:payload].first[:messages].first[:id]).to eq(visible_message.id)
+      end
+
       it 'returns conversations with empty messages array for conversations with out messages' do
         get "/api/v1/accounts/#{account.id}/conversations",
             headers: agent.create_new_auth_token,

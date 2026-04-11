@@ -15,9 +15,13 @@ class MessageFinder
   end
 
   def messages
-    return conversation_messages if @params[:filter_internal_messages].blank?
+    relation = conversation_messages
+    unless @params[:include_session_trace]
+      relation = relation.where.not(message_type: Message.message_types[:session_trace])
+    end
+    return relation if @params[:filter_internal_messages].blank?
 
-    conversation_messages.where.not('private = ? OR message_type = ?', true, 2)
+    relation.where.not('private = ? OR message_type = ?', true, Message.message_types[:activity])
   end
 
   def current_messages
@@ -33,18 +37,39 @@ class MessageFinder
   end
 
   def messages_after(after_id)
-    messages.reorder('created_at asc').where('id > ?', after_id).limit(100)
+    messages.reorder('created_at asc, id asc').where('id > ?', after_id).limit(100)
   end
 
   def messages_before(before_id)
-    messages.reorder('created_at desc').where('id < ?', before_id).limit(20).reverse
+    if @params[:include_session_trace]
+      window_start_id = session_trace_window_start_id(before_id: before_id)
+      return messages.reorder('created_at desc, id desc').where('id < ?', before_id).limit(20).reverse if window_start_id.blank?
+
+      return messages.reorder('created_at asc, id asc').where('id >= ? AND id < ?', window_start_id, before_id)
+    end
+
+    messages.reorder('created_at desc, id desc').where('id < ?', before_id).limit(20).reverse
   end
 
   def messages_between(after_id, before_id)
-    messages.reorder('created_at asc').where('id >= ? AND id < ?', after_id, before_id).limit(1000)
+    messages.reorder('created_at asc, id asc').where('id >= ? AND id < ?', after_id, before_id).limit(1000)
   end
 
   def messages_latest
-    messages.reorder('created_at desc').limit(20).reverse
+    if @params[:include_session_trace]
+      window_start_id = session_trace_window_start_id
+      return messages.reorder('created_at desc, id desc').limit(20).reverse if window_start_id.blank?
+
+      return messages.reorder('created_at asc, id asc').where('id >= ?', window_start_id)
+    end
+
+    messages.reorder('created_at desc, id desc').limit(20).reverse
+  end
+
+  def session_trace_window_start_id(before_id: nil)
+    relation = conversation_messages.where.not(message_type: Message.message_types[:session_trace])
+    relation = relation.where('id < ?', before_id) if before_id.present?
+
+    relation.reorder('created_at desc, id desc').limit(20).last&.id
   end
 end

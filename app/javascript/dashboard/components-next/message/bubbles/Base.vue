@@ -26,6 +26,8 @@ const varaintBaseMap = {
   [MESSAGE_VARIANTS.ACTIVITY]: 'bg-n-alpha-1 text-n-slate-11 text-sm',
   [MESSAGE_VARIANTS.BOT]: 'bg-n-solid-iris text-n-slate-12',
   [MESSAGE_VARIANTS.TEMPLATE]: 'bg-n-solid-iris text-n-slate-12',
+  [MESSAGE_VARIANTS.TRACE]:
+    'bg-n-slate-12 text-n-slate-1 border border-dashed border-n-slate-7 shadow-sm [&_.trace-chip]:bg-n-alpha-2 [&_.trace-chip]:text-n-slate-1',
   [MESSAGE_VARIANTS.ERROR]: 'bg-n-ruby-4 text-n-ruby-12',
   [MESSAGE_VARIANTS.EMAIL]: 'w-full',
   [MESSAGE_VARIANTS.UNSUPPORTED]:
@@ -119,6 +121,8 @@ const replyToPreview = computed(() => {
         variant === MESSAGE_VARIANTS.EMAIL ? 'px-3 pb-3' : '',
         variant === MESSAGE_VARIANTS.PRIVATE
           ? 'text-n-amber-12/50'
+          : variant === MESSAGE_VARIANTS.TRACE
+            ? 'text-n-slate-1/60'
           : 'text-n-slate-11',
       ]"
       class="mt-2"
