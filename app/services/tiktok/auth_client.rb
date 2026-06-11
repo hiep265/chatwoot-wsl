@@ -3,10 +3,12 @@ class Tiktok::AuthClient
                        message.list.send message.list.manage].freeze
 
   class << self
-    def authorize_url(state: nil)
+    def authorize_url(state: nil, account: nil)
+      resolver = account ? AccountSocialAppConfigResolver.new(account) : nil
+
       tiktok_client = ::OAuth2::Client.new(
-        client_id,
-        client_secret,
+        resolver&.load('TIKTOK_APP_ID', nil) || client_id,
+        resolver&.load('TIKTOK_APP_SECRET', nil) || client_secret,
         {
           site: 'https://www.tiktok.com',
           authorize_url: '/v2/auth/authorize',
@@ -17,7 +19,7 @@ class Tiktok::AuthClient
       tiktok_client.authorize_url(
         {
           response_type: 'code',
-          client_key: client_id,
+          client_key: resolver&.load('TIKTOK_APP_ID', nil) || client_id,
           redirect_uri: redirect_uri,
           scope: REQUIRED_SCOPES.join(','),
           state: state
@@ -26,12 +28,14 @@ class Tiktok::AuthClient
     end
 
     # https://business-api.tiktok.com/portal/docs?id=1832184159540418
-    def obtain_short_term_access_token(auth_code) # rubocop:disable Metrics/MethodLength
+    def obtain_short_term_access_token(auth_code, account: nil) # rubocop:disable Metrics/MethodLength
+      resolver = account ? AccountSocialAppConfigResolver.new(account) : nil
+
       endpoint = 'https://business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/token/'
       headers = { 'Accept' => 'application/json', 'Content-Type' => 'application/json' }
       body = {
-        client_id: client_id,
-        client_secret: client_secret,
+        client_id: resolver&.load('TIKTOK_APP_ID', nil) || client_id,
+        client_secret: resolver&.load('TIKTOK_APP_SECRET', nil) || client_secret,
         grant_type: 'authorization_code',
         auth_code: auth_code,
         redirect_uri: redirect_uri
@@ -55,12 +59,14 @@ class Tiktok::AuthClient
       }.with_indifferent_access
     end
 
-    def renew_short_term_access_token(refresh_token) # rubocop:disable Metrics/MethodLength
+    def renew_short_term_access_token(refresh_token, account: nil) # rubocop:disable Metrics/MethodLength
+      resolver = account ? AccountSocialAppConfigResolver.new(account) : nil
+
       endpoint = 'https://business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/refresh_token/'
       headers = { 'Accept' => 'application/json', 'Content-Type' => 'application/json' }
       body = {
-        client_id: client_id,
-        client_secret: client_secret,
+        client_id: resolver&.load('TIKTOK_APP_ID', nil) || client_id,
+        client_secret: resolver&.load('TIKTOK_APP_SECRET', nil) || client_secret,
         grant_type: 'refresh_token',
         refresh_token: refresh_token
       }

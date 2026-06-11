@@ -11,6 +11,7 @@
 #  channel_type                  :string
 #  csat_config                   :jsonb            not null
 #  csat_survey_enabled           :boolean          default(FALSE)
+#  custom_attributes             :jsonb            not null
 #  email_address                 :string
 #  enable_auto_assignment        :boolean          default(TRUE)
 #  enable_email_collect          :boolean          default(TRUE)
@@ -178,7 +179,8 @@ class Inbox < ApplicationRecord
   def webhook_data
     {
       id: id,
-      name: name
+      name: name,
+      custom_attributes: custom_attributes || {}
     }
   end
 

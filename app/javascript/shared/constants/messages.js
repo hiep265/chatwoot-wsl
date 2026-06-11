@@ -11,6 +11,7 @@ export const MESSAGE_TYPE = {
   OUTGOING: 1,
   ACTIVITY: 2,
   TEMPLATE: 3,
+  SESSION_TRACE: 4,
 };
 
 export const CONVERSATION_STATUS = {

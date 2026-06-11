@@ -61,7 +61,10 @@ class Integrations::Facebook::MessageParser
 
   # TODO : does this work ?
   def sent_from_chatwoot_app?
-    app_id && app_id == GlobalConfigService.load('FB_APP_ID', '').to_i
+    # Check against both global and all account-level Facebook app IDs
+    global_app_id = GlobalConfigService.load('FB_APP_ID', '').to_i
+    account_app_ids = AccountSocialAppConfig.where(provider: 'facebook').where.not(app_id: [nil, '']).pluck(:app_id).map(&:to_i)
+    app_id && ([global_app_id] + account_app_ids).include?(app_id)
   end
 
   def in_reply_to_external_id

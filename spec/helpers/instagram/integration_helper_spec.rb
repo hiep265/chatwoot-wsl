@@ -29,6 +29,22 @@ RSpec.describe Instagram::IntegrationHelper do
       end
     end
 
+    context 'when the account has an Instagram app secret override' do
+      let(:account) { create(:account) }
+      let(:client_secret) { nil }
+
+      before do
+        create(:account_social_app_config, account: account, provider: 'instagram', app_secret: 'account_ig_secret')
+      end
+
+      it 'signs the state token with the account-level secret' do
+        token = generate_instagram_token(account.id)
+        decoded_token = JWT.decode(token, 'account_ig_secret', true, algorithm: 'HS256').first
+
+        expect(decoded_token['sub']).to eq(account.id)
+      end
+    end
+
     context 'when an error occurs' do
       before do
         allow(JWT).to receive(:encode).and_raise(StandardError.new('Test error'))
@@ -85,6 +101,22 @@ RSpec.describe Instagram::IntegrationHelper do
 
       it 'returns nil' do
         expect(verify_instagram_token(valid_token)).to be_nil
+      end
+    end
+
+    context 'when the token was signed with an account-level secret' do
+      let(:account) { create(:account) }
+      let(:client_secret) { nil }
+      let(:valid_token) do
+        JWT.encode({ sub: account.id, iat: Time.current.to_i }, 'account_ig_secret', 'HS256')
+      end
+
+      before do
+        create(:account_social_app_config, account: account, provider: 'instagram', app_secret: 'account_ig_secret')
+      end
+
+      it 'verifies the token with the account-level secret' do
+        expect(verify_instagram_token(valid_token)).to eq(account.id)
       end
     end
 

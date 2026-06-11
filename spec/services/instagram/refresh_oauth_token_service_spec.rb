@@ -65,6 +65,69 @@ RSpec.describe Instagram::RefreshOauthTokenService do
   end
 
   describe 'private methods' do
+    describe '#refresh_long_lived_token' do
+      before do
+        WebMock.reset!
+
+        stub_request(:get, 'https://graph.instagram.com/refresh_access_token')
+          .with(
+            query: {
+              'access_token' => fixed_token,
+              'grant_type' => 'ig_refresh_token'
+            },
+            headers: {
+              'Accept' => 'application/json',
+              'Accept-Encoding' => 'gzip;q=1.0,deflate;q=0.6,identity;q=0.3',
+              'User-Agent' => 'Ruby'
+            }
+          )
+          .to_return(
+            status: 400,
+            body: {
+              error: {
+                message: 'Unsupported request - method type: get',
+                type: 'IGApiException',
+                code: 100
+              }
+            }.to_json,
+            headers: { 'Content-Type' => 'application/json' }
+          )
+
+        stub_request(:post, 'https://graph.instagram.com/refresh_access_token')
+          .with(
+            body: {
+              'access_token' => fixed_token,
+              'grant_type' => 'ig_refresh_token'
+            },
+            headers: {
+              'Accept' => 'application/json',
+              'Accept-Encoding' => 'gzip;q=1.0,deflate;q=0.6,identity;q=0.3',
+              'Content-Type' => 'application/x-www-form-urlencoded',
+              'User-Agent' => 'Ruby'
+            }
+          )
+          .to_return(
+            status: 400,
+            body: {
+              error: {
+                message: 'Unsupported request - method type: post',
+                type: 'IGApiException',
+                code: 100
+              }
+            }.to_json,
+            headers: { 'Content-Type' => 'application/json' }
+          )
+      end
+
+      it 'raises the GET response without retrying with POST' do
+        expect do
+          service.send(:refresh_long_lived_token)
+        end.to raise_error(RuntimeError, /Unsupported request - method type: get/)
+
+        expect(WebMock).not_to have_requested(:post, 'https://graph.instagram.com/refresh_access_token')
+      end
+    end
+
     describe '#token_valid?' do
       # For the expires_at null test, we need to modify the validation or use a different approach
       context 'when expires_at is blank' do

@@ -32,22 +32,19 @@ RSpec.describe 'Instagram Authorization API', type: :request do
         expect(response).to have_http_status(:success)
         expect(response.parsed_body['success']).to be true
 
-        instagram_service = Class.new do
-          extend InstagramConcern
-          extend Instagram::IntegrationHelper
-        end
-        frontend_url = ENV.fetch('FRONTEND_URL', 'http://localhost:3000')
-        response_url = instagram_service.instagram_client.auth_code.authorize_url(
-          {
-            redirect_uri: "#{frontend_url}/instagram/callback",
-            scope: Instagram::IntegrationHelper::REQUIRED_SCOPES.join(','),
-            enable_fb_login: '0',
-            force_authentication: '1',
-            response_type: 'code',
-            state: instagram_service.generate_instagram_token(account.id)
-          }
+        authorization_url = URI.parse(response.parsed_body['url'])
+        authorization_params = Rack::Utils.parse_query(authorization_url.query)
+
+        expect(authorization_url.host).to eq('www.instagram.com')
+        expect(authorization_url.path).to eq('/oauth/authorize')
+        expect(authorization_params).to include(
+          'redirect_uri' => "#{ENV.fetch('FRONTEND_URL', 'http://localhost:3000')}/instagram/callback",
+          'scope' => Instagram::IntegrationHelper::REQUIRED_SCOPES.join(','),
+          'enable_fb_login' => '0',
+          'force_reauth' => '1',
+          'response_type' => 'code'
         )
-        expect(response.parsed_body['url']).to eq response_url
+        expect(authorization_params).not_to include('force_authentication')
       end
     end
   end

@@ -23,10 +23,46 @@ RSpec.describe InstagramConcern do
       expect(client.id).to eq(client_id)
       expect(client.secret).to eq(client_secret)
       expect(client.site).to eq('https://api.instagram.com')
-      expect(client.options[:authorize_url]).to eq('https://api.instagram.com/oauth/authorize')
+      expect(client.options[:authorize_url]).to eq('https://www.instagram.com/oauth/authorize')
       expect(client.options[:token_url]).to eq('https://api.instagram.com/oauth/access_token')
       expect(client.options[:auth_scheme]).to eq(:request_body)
       expect(client.options[:token_method]).to eq(:post)
+    end
+
+    context 'when Current.account is blank and the controller exposes an account' do
+      let(:account) { create(:account) }
+      let(:dummy_class) do
+        Class.new do
+          include InstagramConcern
+
+          attr_writer :account
+
+          private
+
+          def account
+            @account
+          end
+        end
+      end
+
+      before do
+        Current.account = nil
+        dummy_instance.account = account
+        create(
+          :account_social_app_config,
+          account: account,
+          provider: 'instagram',
+          app_id: 'account_instagram_id',
+          app_secret: 'account_instagram_secret'
+        )
+      end
+
+      it 'uses the callback account social app config', :aggregate_failures do
+        client = dummy_instance.instagram_client
+
+        expect(client.id).to eq('account_instagram_id')
+        expect(client.secret).to eq('account_instagram_secret')
+      end
     end
   end
 
@@ -48,8 +84,7 @@ RSpec.describe InstagramConcern do
           query: {
             grant_type: 'ig_exchange_token',
             client_secret: client_secret,
-            access_token: short_lived_token,
-            client_id: client_id
+            access_token: short_lived_token
           },
           headers: { 'Accept' => 'application/json' }
         }
@@ -75,6 +110,47 @@ RSpec.describe InstagramConcern do
         allow(JSON).to receive(:parse).and_raise(JSON::ParserError.new('Invalid JSON'))
 
         expect { dummy_instance.send(:exchange_for_long_lived_token, short_lived_token) }.to raise_error(JSON::ParserError)
+      end
+    end
+
+    context 'when Instagram rejects the long-lived token request' do
+      let(:unsupported_get_response) do
+        instance_double(
+          HTTParty::Response,
+          body: {
+            error: {
+              message: 'Unsupported request - method type: get',
+              type: 'IGApiException',
+              code: 100
+            }
+          }.to_json,
+          success?: false,
+          code: 400
+        )
+      end
+
+      before do
+        allow(HTTParty).to receive(:get).and_return(unsupported_get_response)
+      end
+
+      it 'raises the GET response without retrying with POST' do
+        expect(HTTParty).not_to receive(:post)
+
+        expect do
+          dummy_instance.send(:exchange_for_long_lived_token, short_lived_token)
+        end.to raise_error(RuntimeError, /Unsupported request - method type: get/)
+
+        expect(HTTParty).to have_received(:get).with(
+          'https://graph.instagram.com/access_token',
+          {
+            query: {
+              grant_type: 'ig_exchange_token',
+              client_secret: client_secret,
+              access_token: short_lived_token
+            },
+            headers: { 'Accept' => 'application/json' }
+          }
+        )
       end
     end
   end

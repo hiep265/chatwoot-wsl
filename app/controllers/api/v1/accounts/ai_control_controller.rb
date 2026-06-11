@@ -50,6 +50,23 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
     render json: { error: 'Unable to trigger FAQ training', detail: e.message }, status: :bad_gateway
   end
 
+  def chatwoot_reply_replay_config
+    render json: AiControl::ChatwootReplyReplayService.load_config(Current.account.id), status: :ok
+  end
+
+  def update_chatwoot_reply_replay_config
+    unless params.key?(:enabled)
+      render json: { error: 'enabled is required' }, status: :unprocessable_entity
+      return
+    end
+
+    config = AiControl::ChatwootReplyReplayService.save_config(
+      Current.account.id,
+      enabled: params[:enabled]
+    )
+    render json: config, status: :ok
+  end
+
   def wiki_learning_schedule
     base_url = chatbotlevan_base_url
     unless base_url.present?
@@ -149,6 +166,60 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
       "[AiControl] run_wiki_learning_schedule_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}"
     )
     render json: { error: 'Unable to run wiki learning now', detail: e.message }, status: :bad_gateway
+  end
+
+  def wiki_learning_wrong_answer
+    conversation_id = params[:conversation_id].to_s.strip
+    if conversation_id.blank?
+      render json: { error: 'conversation_id is required' }, status: :unprocessable_entity
+      return
+    end
+
+    bot_message_id = params[:bot_message_id].to_s.strip
+    bot_message_id = params[:message_id].to_s.strip if bot_message_id.blank?
+    if bot_message_id.blank?
+      render json: { error: 'bot_message_id is required' }, status: :unprocessable_entity
+      return
+    end
+
+    base_url = chatbotlevan_base_url
+    unless base_url.present?
+      render json: { error: 'CHATBOTLEVAN_BASE_URL is not configured' }, status: :unprocessable_entity
+      return
+    end
+
+    marked_by = params[:marked_by].to_s.strip
+    marked_by = Current.user&.email.to_s.strip if marked_by.blank?
+    marked_by = "chatwoot_user_#{Current.user&.id}" if marked_by.blank?
+
+    payload = {
+      account_id: Current.account.id.to_s,
+      conversation_id: conversation_id,
+      bot_message_id: bot_message_id,
+      reviewer_note: params[:reviewer_note].to_s.strip.presence,
+      marked_by: marked_by
+    }.compact
+
+    response = post_json("#{base_url}/learning/wiki/wrong-answer", payload)
+    status = response.code.to_i
+    body = parse_json_body(response.body)
+
+    if status.between?(200, 299)
+      render json: body, status: :ok
+      return
+    end
+
+    Rails.logger.error(
+      "[AiControl] wiki_learning_wrong_answer_failed account_id=#{Current.account.id} " \
+      "conversation_id=#{conversation_id} bot_message_id=#{bot_message_id} status=#{status} body=#{response.body}"
+    )
+    render json: { error: 'Wrong answer wiki learning request failed', detail: body }, status: :bad_gateway
+  rescue StandardError => e
+    Rails.logger.error(
+      "[AiControl] wiki_learning_wrong_answer_error account_id=#{Current.account.id} " \
+      "conversation_id=#{params[:conversation_id]} bot_message_id=#{params[:bot_message_id]} error=#{e.class}:#{e.message}"
+    )
+    render json: { error: 'Unable to run wrong answer wiki learning', detail: e.message }, status: :bad_gateway
   end
 
   def payment_review_cases
@@ -526,6 +597,33 @@ class Api::V1::Accounts::AiControlController < Api::V1::Accounts::BaseController
       failure_message: 'Priority digest request failed',
       enricher: :enrich_manager_rows
     )
+  end
+
+  def chatwoot_agents
+    base_url = chatbotlevan_base_url
+    unless base_url.present?
+      render json: { error: 'CHATBOTLEVAN_BASE_URL is not configured' }, status: :unprocessable_entity
+      return
+    end
+
+    response = get_json("#{base_url}/webhooks/chatwoot/agents")
+    status = response.code.to_i
+    body = parse_json_body(response.body)
+
+    if status.between?(200, 299)
+      render json: body, status: :ok
+      return
+    end
+
+    Rails.logger.error(
+      "[AiControl] chatwoot_agents_failed account_id=#{Current.account.id} status=#{status} body=#{response.body}"
+    )
+    render json: { error: 'Chatwoot agents request failed', detail: body }, status: :bad_gateway
+  rescue StandardError => e
+    Rails.logger.error(
+      "[AiControl] chatwoot_agents_error account_id=#{Current.account.id} error=#{e.class}:#{e.message}"
+    )
+    render json: { error: 'Unable to fetch Chatwoot agents', detail: e.message }, status: :bad_gateway
   end
 
   # ── Blocked Inbox Management (AI webhook control) ──

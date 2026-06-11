@@ -61,7 +61,8 @@ class Conversations::MessageWindowService
   end
 
   def meta_messaging_window(config_key)
-    GlobalConfigService.load(config_key, nil) ? MESSAGING_WINDOW_7_DAYS : MESSAGING_WINDOW_24_HOURS
+    resolver = AccountSocialAppConfigResolver.new(@conversation.inbox.account)
+    resolver.load(config_key, nil) ? MESSAGING_WINDOW_7_DAYS : MESSAGING_WINDOW_24_HOURS
   end
 
   def last_incoming_message

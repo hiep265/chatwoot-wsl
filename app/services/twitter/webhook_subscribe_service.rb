@@ -23,7 +23,13 @@ class Twitter::WebhookSubscribeService
   end
 
   def twitter_url
+    return account_twitter_webhook_url(account_id: inbox.account_id, protocol: 'https') if account_twitter_app_config?
+
     webhooks_twitter_url(protocol: 'https')
+  end
+
+  def account_twitter_app_config?
+    inbox.account.social_app_configs.exists?(provider: 'twitter')
   end
 
   def ensure_webhook

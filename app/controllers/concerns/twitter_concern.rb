@@ -11,12 +11,13 @@ module TwitterConcern
     ENV.fetch('FRONTEND_URL', '')
   end
 
-  def twitter_client
+  def twitter_client(account: nil)
+    resolver = account ? AccountSocialAppConfigResolver.new(account) : nil
     Twitty::Facade.new do |config|
-      config.consumer_key = ENV.fetch('TWITTER_CONSUMER_KEY', nil)
-      config.consumer_secret = ENV.fetch('TWITTER_CONSUMER_SECRET', nil)
+      config.consumer_key = resolver&.load('TWITTER_CONSUMER_KEY', nil) || ENV.fetch('TWITTER_CONSUMER_KEY', nil)
+      config.consumer_secret = resolver&.load('TWITTER_CONSUMER_SECRET', nil) || ENV.fetch('TWITTER_CONSUMER_SECRET', nil)
       config.base_url = twitter_api_base_url
-      config.environment = ENV.fetch('TWITTER_ENVIRONMENT', '')
+      config.environment = resolver&.load('TWITTER_ENVIRONMENT', '') || ENV.fetch('TWITTER_ENVIRONMENT', '')
     end
   end
 

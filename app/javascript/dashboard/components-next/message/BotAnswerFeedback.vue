@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
+import AiControlAPI from 'dashboard/api/aiControl';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
@@ -234,6 +235,11 @@ const handleSubmit = async () => {
     if (assistantId) payload.assistant_id = assistantId;
 
     await store.dispatch('captainResponses/create', payload);
+    await AiControlAPI.learnFromWrongAnswer({
+      conversationId: conversationId.value,
+      botMessageId: id.value,
+      reviewerNote: String(note.value || '').trim(),
+    });
     useAlert(t('CONVERSATION.BOT_FEEDBACK.ALERTS.SUCCESS'));
     dialogRef.value?.close();
   } catch (error) {

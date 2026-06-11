@@ -44,6 +44,28 @@ class AiControlAPI extends ApiClient {
     return axios.post(`${this.url}/wiki_learning_schedule/run_now`);
   }
 
+  getChatwootAgents() {
+    return axios.get(`${this.url}/chatwoot_agents`);
+  }
+
+  getChatwootReplyReplayConfig() {
+    return axios.get(`${this.url}/chatwoot_reply_replay_config`);
+  }
+
+  updateChatwootReplyReplayConfig({ enabled } = {}) {
+    return axios.put(`${this.url}/chatwoot_reply_replay_config`, {
+      enabled: Boolean(enabled),
+    });
+  }
+
+  learnFromWrongAnswer({ conversationId, botMessageId, reviewerNote } = {}) {
+    return axios.post(`${this.url}/wiki_learning_wrong_answer`, {
+      conversation_id: conversationId,
+      bot_message_id: botMessageId,
+      reviewer_note: reviewerNote,
+    });
+  }
+
   listPaymentReviewCases({
     reviewStatus = 'payment_review_pending',
     segment,

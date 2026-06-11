@@ -104,6 +104,51 @@
           "ERROR": "Failed to update audio transcription setting"
         }
       },
+      "CHATWOOT_REPLY_REPLAY": {
+        "TITLE": "Replay unanswered AI webhooks",
+        "NOTE": "When enabled, Chatwoot will resend unanswered customer conversations back to chatbotlevan every 60 minutes while the customer is still waiting. Only conversations with a waiting customer message from the last 24 hours are scanned.",
+        "STATUS": {
+          "REPEAT_INTERVAL": "Every {minutes} minutes",
+          "ACTIVE_WINDOW": "Last {hours} hours"
+        },
+        "API": {
+          "SUCCESS": "Replay setting updated successfully",
+          "ERROR": "Failed to update replay setting"
+        }
+      },
+      "FAQ_TRAINING": {
+        "TITLE": "Frequently asked questions training",
+        "NOTE": "Trigger FAQ learning from recent conversations without leaving account settings.",
+        "DAYS_LABEL": "Conversation window in days",
+        "RUN_BUTTON": "Run FAQ training",
+        "REPORT": {
+          "CREATED": "New",
+          "DUPLICATES": "Duplicates",
+          "CONFLICTS": "Conflicts",
+          "ERRORS": "Errors"
+        },
+        "API": {
+          "SUCCESS": "FAQ training started successfully",
+          "ERROR": "Unable to run FAQ training",
+          "INVALID_DAYS": "Training window must be between 1 and 365 days"
+        }
+      },
+      "WIKI_LEARNING": {
+        "TITLE": "Wiki learning schedule",
+        "NOTE": "Review and update the Wiki learning schedule here, or trigger a run immediately when needed.",
+        "ENABLED_LABEL": "Enable scheduled Wiki learning",
+        "TIME_LABEL": "Time of day",
+        "TIMEZONE_LABEL": "Timezone",
+        "SAVE_BUTTON": "Save schedule",
+        "RUN_NOW_BUTTON": "Run now",
+        "API": {
+          "SUCCESS": "Wiki learning schedule saved",
+          "ERROR": "Unable to save Wiki learning schedule",
+          "LOAD_ERROR": "Unable to load Wiki learning schedule",
+          "RUN_NOW_SUCCESS": "Wiki learning run requested",
+          "RUN_NOW_ERROR": "Unable to trigger Wiki learning now"
+        }
+      },
       "AUTO_RESOLVE_DURATION": {
         "LABEL": "Inactivity duration for resolution",
         "HELP": "Duration after a conversation should auto resolve if there is no activity",

@@ -18,7 +18,7 @@ const props = defineProps({
   },
 });
 
-defineEmits(['toggleMode']);
+const emit = defineEmits(['setMode']);
 
 const wootEditorReplyMode = useTemplateRef('wootEditorReplyMode');
 const wootEditorPrivateMode = useTemplateRef('wootEditorPrivateMode');
@@ -26,66 +26,89 @@ const wootEditorPrivateMode = useTemplateRef('wootEditorPrivateMode');
 const replyModeSize = useElementSize(wootEditorReplyMode);
 const privateModeSize = useElementSize(wootEditorPrivateMode);
 
-/**
- * Computed boolean indicating if the editor is in private note mode
- * When isReplyRestricted is true, force switch to private note
- * Otherwise, respect the current mode prop
- * @type {ComputedRef<boolean>}
- */
-const isPrivate = computed(() => {
-  if (props.isReplyRestricted) {
-    // Force switch to private note when replies are restricted
-    return true;
+const modeOrder = [REPLY_EDITOR_MODES.REPLY, REPLY_EDITOR_MODES.NOTE];
+
+const selectedMode = computed(() => {
+  if (props.isReplyRestricted && props.mode === REPLY_EDITOR_MODES.REPLY) {
+    return REPLY_EDITOR_MODES.NOTE;
   }
-  // Otherwise respect the current mode
-  return props.mode === REPLY_EDITOR_MODES.NOTE;
+
+  return modeOrder.includes(props.mode) ? props.mode : '';
 });
 
-/**
- * Computes the width of the sliding background chip in pixels
- * Includes 16px of padding in the calculation
- * @type {ComputedRef<string>}
- */
+const isDisabled = computed(() => props.disabled);
+
+const isModeDisabled = mode => {
+  if (props.disabled) return true;
+  return props.isReplyRestricted && mode === REPLY_EDITOR_MODES.REPLY;
+};
+
+const getModeWidth = mode => {
+  if (mode === REPLY_EDITOR_MODES.NOTE) {
+    return privateModeSize.width.value;
+  }
+
+  return replyModeSize.width.value;
+};
+
 const width = computed(() => {
-  const widthToUse = isPrivate.value
-    ? privateModeSize.width.value
-    : replyModeSize.width.value;
+  const widthToUse = getModeWidth(selectedMode.value);
 
   const widthWithPadding = widthToUse + 16;
-  return `${widthWithPadding}px`;
+  return selectedMode.value ? `${widthWithPadding}px` : '0px';
 });
 
-/**
- * Computes the X translation value for the sliding background chip
- * Translates by the width of reply mode + padding when in private mode
- * @type {ComputedRef<string>}
- */
 const translateValue = computed(() => {
-  const xTranslate = isPrivate.value ? replyModeSize.width.value + 16 : 0;
+  const selectedIndex = modeOrder.indexOf(selectedMode.value);
+  if (selectedIndex < 0) return '0px';
+
+  const xTranslate = modeOrder
+    .slice(0, selectedIndex)
+    .reduce((sum, mode) => sum + getModeWidth(mode) + 16, 0);
 
   return `${xTranslate}px`;
 });
+
+const selectMode = mode => {
+  if (isModeDisabled(mode)) return;
+  emit('setMode', mode);
+};
 </script>
 
 <template>
-  <button
+  <div
+    role="group"
     class="flex items-center w-auto h-8 p-1 transition-all border rounded-full bg-n-alpha-2 group relative duration-300 ease-in-out z-0 active:scale-[0.995] active:duration-75"
-    :disabled="disabled || isReplyRestricted"
+    :aria-disabled="isDisabled"
     :class="{
-      'cursor-not-allowed': disabled || isReplyRestricted,
+      'cursor-not-allowed': isDisabled,
     }"
-    @click="$emit('toggleMode')"
   >
-    <div ref="wootEditorReplyMode" class="flex items-center gap-1 px-2 z-20">
+    <button
+      ref="wootEditorReplyMode"
+      type="button"
+      class="relative z-20 flex items-center gap-1 px-2 h-6"
+      :disabled="isModeDisabled(REPLY_EDITOR_MODES.REPLY)"
+      :aria-pressed="selectedMode === REPLY_EDITOR_MODES.REPLY"
+      @click="selectMode(REPLY_EDITOR_MODES.REPLY)"
+    >
       {{ $t('CONVERSATION.REPLYBOX.REPLY') }}
-    </div>
-    <div ref="wootEditorPrivateMode" class="flex items-center gap-1 px-2 z-20">
+    </button>
+    <button
+      ref="wootEditorPrivateMode"
+      type="button"
+      class="relative z-20 flex items-center gap-1 px-2 h-6"
+      :disabled="isModeDisabled(REPLY_EDITOR_MODES.NOTE)"
+      :aria-pressed="selectedMode === REPLY_EDITOR_MODES.NOTE"
+      @click="selectMode(REPLY_EDITOR_MODES.NOTE)"
+    >
       {{ $t('CONVERSATION.REPLYBOX.PRIVATE_NOTE') }}
-    </div>
+    </button>
     <div
-      class="absolute shadow-sm rounded-full h-6 w-[var(--chip-width)] ease-in-out translate-x-[var(--translate-x)] rtl:translate-x-[var(--rtl-translate-x)] bg-n-solid-1"
+      class="absolute top-1 ltr:left-1 rtl:right-1 pointer-events-none shadow-sm rounded-full h-6 w-[var(--chip-width)] ease-in-out translate-x-[var(--translate-x)] rtl:translate-x-[var(--rtl-translate-x)] bg-n-solid-1"
       :class="{
-        'transition-all duration-300': !disabled && !isReplyRestricted,
+        'transition-all duration-300': !isDisabled,
+        'opacity-0': !selectedMode,
       }"
       :style="{
         '--chip-width': width,
@@ -93,5 +116,5 @@ const translateValue = computed(() => {
         '--rtl-translate-x': `calc(-1 * var(--translate-x))`,
       }"
     />
-  </button>
+  </div>
 </template>

@@ -22,15 +22,18 @@ class Webhooks::TiktokController < ActionController::API
 
   def verify_signature!
     signature_header = request.headers['Tiktok-Signature']
-    client_secret = GlobalConfigService.load('TIKTOK_APP_SECRET', nil)
     received_timestamp, received_signature = extract_signature_parts(signature_header)
 
-    return head :unauthorized unless client_secret && received_timestamp && received_signature
+    return head :unauthorized unless received_timestamp && received_signature
 
-    signature_payload = "#{received_timestamp}.#{request_payload}"
-    computed_signature = OpenSSL::HMAC.hexdigest('SHA256', client_secret, signature_payload)
+    # Try all configured TikTok secrets (account-level + global fallback)
+    valid = tiktok_secrets.any? do |secret|
+      signature_payload = "#{received_timestamp}.#{request_payload}"
+      computed_signature = OpenSSL::HMAC.hexdigest('SHA256', secret, signature_payload)
+      ActiveSupport::SecurityUtils.secure_compare(computed_signature, received_signature)
+    end
 
-    return head :unauthorized unless ActiveSupport::SecurityUtils.secure_compare(computed_signature, received_signature)
+    return head :unauthorized unless valid
 
     # Check timestamp delay (acceptable delay: 5 seconds)
     current_timestamp = Time.current.to_i
@@ -49,5 +52,13 @@ class Webhooks::TiktokController < ActionController::API
 
   def echo_event?
     params[:event] == 'im_send_msg'
+  end
+
+  def tiktok_secrets
+    global_secret = GlobalConfigService.load('TIKTOK_APP_SECRET', nil)
+    account_secrets = AccountSocialAppConfig.where(provider: 'tiktok').filter_map(&:app_secret)
+    secrets = account_secrets
+    secrets << global_secret if global_secret.present?
+    secrets
   end
 end

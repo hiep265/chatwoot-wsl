@@ -3081,7 +3081,7 @@ onMounted(() => {
   fetchPaymentReviewCases();
   fetchBlockedInboxes();
   fetchWikiLearningSchedule();
-  store.dispatch('inboxes/get');
+  store.dispatch('inboxes/get', { force: true });
   store.dispatch('labels/get');
   emitter.on(
     'ai_control_panel:refresh_live_conversations',

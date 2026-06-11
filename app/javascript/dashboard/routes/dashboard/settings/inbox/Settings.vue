@@ -24,6 +24,7 @@ import CollaboratorsPage from './settingsPage/CollaboratorsPage.vue';
 import WidgetBuilder from './WidgetBuilder.vue';
 import BotConfiguration from './components/BotConfiguration.vue';
 import AccountHealth from './components/AccountHealth.vue';
+import KimiAgentSelector from './components/KimiAgentSelector.vue';
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import SenderNameExamplePreview from './components/SenderNameExamplePreview.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
@@ -55,6 +56,7 @@ export default {
     Editor,
     Avatar,
     AccountHealth,
+    KimiAgentSelector,
   },
   mixins: [inboxMixin],
   setup() {
@@ -81,6 +83,7 @@ export default {
       replyTime: '',
       selectedTabIndex: 0,
       selectedPortalSlug: '',
+      selectedKimiAgentName: '',
       showBusinessNameInput: false,
       healthData: null,
       isLoadingHealth: false,
@@ -416,6 +419,8 @@ export default {
         this.selectedPortalSlug = this.inbox.help_center
           ? this.inbox.help_center.slug
           : '';
+        this.selectedKimiAgentName =
+          this.inbox.custom_attributes?.kimi_agent_name || '';
 
         // Set initial tab after inbox data is loaded
         this.setTabFromRouteParam();
@@ -438,6 +443,10 @@ export default {
           lock_to_single_conversation: this.locktoSingleConversation,
           sender_name_type: this.senderNameType,
           business_name: this.businessName || null,
+          custom_attributes: {
+            ...(this.inbox.custom_attributes || {}),
+            kimi_agent_name: this.selectedKimiAgentName || '',
+          },
           channel: {
             widget_color: this.inbox.widget_color,
             website_url: this.channelWebsiteUrl,
@@ -574,6 +583,7 @@ export default {
             "
             @blur="v$.selectedInboxName.$touch"
           />
+          <KimiAgentSelector v-model="selectedKimiAgentName" />
           <woot-input
             v-if="isAPIInbox"
             v-model="webhookUrl"

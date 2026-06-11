@@ -40,3 +40,36 @@ describe '/app/login', type: :request do
     end
   end
 end
+
+describe '/app/accounts/:account_id/settings/inboxes/new/instagram', type: :request do
+  let(:account) { create(:account) }
+
+  before do
+    create(
+      :account_social_app_config,
+      account: account,
+      provider: 'facebook',
+      app_id: 'account-fb-app-id',
+      api_version: 'v99.0'
+    )
+    create(
+      :account_social_app_config,
+      account: account,
+      provider: 'whatsapp_embedded',
+      app_id: 'account-wa-app-id',
+      configuration_id: 'account-wa-config-id',
+      api_version: 'v98.0'
+    )
+  end
+
+  it 'renders account-scoped social app config in chatwootConfig' do
+    get "/app/accounts/#{account.id}/settings/inboxes/new/instagram"
+
+    expect(response).to have_http_status(:success)
+    expect(response.body).to include("fbAppId: 'account-fb-app-id'")
+    expect(response.body).to include("fbApiVersion: 'v99.0'")
+    expect(response.body).to include("whatsappAppId: 'account-wa-app-id'")
+    expect(response.body).to include("whatsappConfigurationId: 'account-wa-config-id'")
+    expect(response.body).to include("whatsappApiVersion: 'v98.0'")
+  end
+end

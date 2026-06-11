@@ -33,7 +33,7 @@ class Whatsapp::WebhookTeardownService
   def teardown_webhook
     waba_id = @channel.provider_config['business_account_id']
     access_token = @channel.provider_config['api_key']
-    api_client = Whatsapp::FacebookApiClient.new(access_token)
+    api_client = Whatsapp::FacebookApiClient.new(access_token, account: @channel.account)
 
     api_client.unsubscribe_waba_webhook(waba_id)
     Rails.logger.info "[WHATSAPP] Webhook unsubscribed successfully for channel #{@channel.id}"

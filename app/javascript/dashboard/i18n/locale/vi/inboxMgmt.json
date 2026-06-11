@@ -700,6 +700,14 @@
       "INBOX_AGENTS_SUB_TEXT": "Thêm hoặc xóa tác nhân khỏi hộp thư đến này",
       "AGENT_ASSIGNMENT": "Phân công cuộc trò chuyện",
       "AGENT_ASSIGNMENT_SUB_TEXT": "Cập nhật phân công cuộc trò chuyện",
+      "KIMI_AGENT_SELECTOR": {
+        "LABEL": "AI Agent",
+        "DEFAULT_OPTION": "Dùng agent mặc định",
+        "LOADING_TEXT": "Đang tải agent...",
+        "HELP_TEXT": "Chọn Kimi agent sẽ trả lời tin nhắn từ hộp thư đến này.",
+        "EMPTY_TEXT": "Chưa có Kimi agent nào tương thích với Chatwoot.",
+        "ERROR_TEXT": "Không thể tải danh sách Kimi agent."
+      },
       "UPDATE": "Cập nhật",
       "ENABLE_EMAIL_COLLECT_BOX": "Bật hộp thu thập email",
       "ENABLE_EMAIL_COLLECT_BOX_SUB_TEXT": "Bật hoặc tắt hộp thu thập email trên cuộc trò chuyện mới",

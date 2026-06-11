@@ -27,7 +27,7 @@ class Channel::FacebookPage < ApplicationRecord
     encrypts :user_access_token
   end
 
-  self.table_name = 'channel_facebook_pages'
+  self.table_name = "channel_facebook_pages"
 
   validates :page_id, uniqueness: { scope: :account_id }
 
@@ -35,7 +35,7 @@ class Channel::FacebookPage < ApplicationRecord
   before_destroy :unsubscribe
 
   def name
-    'Facebook'
+    "Facebook"
   end
 
   def create_contact_inbox(instagram_id, name)
@@ -48,21 +48,23 @@ class Channel::FacebookPage < ApplicationRecord
 
   def subscribe
     # ref https://developers.facebook.com/docs/messenger-platform/reference/webhook-events
+    # Also ref https://developers.facebook.com/docs/graph-api/webhooks/getting-started
     Facebook::Messenger::Subscriptions.subscribe(
       access_token: page_access_token,
       subscribed_fields: %w[
         messages message_deliveries message_echoes message_reads standby messaging_handovers messaging_optins
+        feed
       ]
     )
   rescue StandardError => e
-    Rails.logger.debug { "Rescued: #{e.inspect}" }
+    Rails.logger.debug { "Resciled: #{e.inspect}" }
     true
   end
 
   def unsubscribe
     Facebook::Messenger::Subscriptions.unsubscribe(access_token: page_access_token)
   rescue StandardError => e
-    Rails.logger.debug { "Rescued: #{e.inspect}" }
+    Rails.logger.debug { "Resciled: #{e.inspect}" }
     true
   end
 end

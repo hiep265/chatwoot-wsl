@@ -178,7 +178,7 @@ export default {
         this.isAWhatsAppChannel ||
         this.isAPIInbox
       ) {
-        return this.isOnPrivateNote;
+        return this.isOnPrivateNote || this.isOnAiNote;
       }
       return true;
     },
@@ -195,6 +195,9 @@ export default {
       return this.$store.getters['inboxes/getInbox'](this.inboxId);
     },
     messagePlaceHolder() {
+      if (this.isOnAiNote) {
+        return this.$t('CONVERSATION.FOOTER.AI_NOTE_MSG_INPUT');
+      }
       return this.isPrivate
         ? this.$t('CONVERSATION.FOOTER.PRIVATE_MSG_INPUT')
         : this.$t('CONVERSATION.FOOTER.MSG_INPUT');
@@ -292,7 +295,7 @@ export default {
       return this.attachedFiles.length;
     },
     showAudioRecorder() {
-      return !this.isOnPrivateNote && this.showFileUpload;
+      return !this.isPrivate && this.showFileUpload;
     },
     showAudioRecorderEditor() {
       return this.showAudioRecorder && this.isRecordingAudio;
@@ -315,7 +318,7 @@ export default {
       return !this.message.trim().replace(/\n/g, '').length;
     },
     showReplyHead() {
-      return !this.isOnPrivateNote && this.isAnEmailChannel;
+      return !this.isPrivate && this.isAnEmailChannel;
     },
     enableMultipleFileUpload() {
       return (
@@ -400,7 +403,7 @@ export default {
     shouldShowQuotedReplyToggle() {
       return (
         this.isAnEmailChannel &&
-        !this.isOnPrivateNote &&
+        !this.isPrivate &&
         this.isQuotedEmailReplyEnabled
       );
     },
@@ -413,6 +416,9 @@ export default {
     },
     isDefaultEditorMode() {
       return !this.showAudioRecorderEditor && !this.copilot.isActive.value;
+    },
+    isOnAiNote() {
+      return this.replyType === REPLY_EDITOR_MODES.AI_NOTE;
     },
   },
   watch: {
@@ -427,7 +433,7 @@ export default {
         this.copilot.reset();
       }
 
-      if (this.isOnPrivateNote) {
+      if (this.isOnPrivateNote || this.isOnAiNote) {
         return;
       }
 
@@ -664,7 +670,7 @@ export default {
             medium: this.inbox?.medium,
             conversationType: this.conversationType,
             isInstagramChannel: this.isAnInstagramChannel,
-            isOnPrivateNote: this.isOnPrivateNote,
+            isOnPrivateNote: this.isPrivate,
           });
 
           if (!isAllowed) {
@@ -834,11 +840,17 @@ export default {
       if (this.attachedFiles.length > 0) this.attachedFiles = [];
 
       const { can_reply: canReply } = this.currentChat;
+      const canUseReplyMode =
+        canReply || this.isAWhatsAppChannel || this.isAPIInbox;
+      const isNoteMode =
+        mode === REPLY_EDITOR_MODES.NOTE || mode === REPLY_EDITOR_MODES.AI_NOTE;
+      const nextMode =
+        canUseReplyMode || isNoteMode ? mode : REPLY_EDITOR_MODES.NOTE;
+
       this.$store.dispatch('draftMessages/setReplyEditorMode', {
-        mode,
+        mode: nextMode,
       });
-      if (canReply || this.isAWhatsAppChannel || this.isAPIInbox)
-        this.replyType = mode;
+      this.replyType = nextMode;
       if (this.isRecordingAudio) {
         this.toggleAudioRecorder();
       }
@@ -1026,6 +1038,14 @@ export default {
         private: this.isPrivate,
         sender: this.sender,
       };
+
+      if (this.isOnAiNote) {
+        messagePayload.contentAttributes = {
+          ...messagePayload.contentAttributes,
+          ai_note_for_agent: true,
+          ai_note_source: 'reply_box',
+        };
+      }
       messagePayload = this.setReplyToInPayload(messagePayload);
 
       if (this.attachedFiles && this.attachedFiles.length) {
@@ -1039,15 +1059,15 @@ export default {
         });
       }
 
-      if (this.ccEmails && !this.isOnPrivateNote) {
+      if (this.ccEmails && !this.isPrivate) {
         messagePayload.ccEmails = this.ccEmails;
       }
 
-      if (this.bccEmails && !this.isOnPrivateNote) {
+      if (this.bccEmails && !this.isPrivate) {
         messagePayload.bccEmails = this.bccEmails;
       }
 
-      if (this.toEmails && !this.isOnPrivateNote) {
+      if (this.toEmails && !this.isPrivate) {
         messagePayload.toEmails = this.toEmails;
       }
       return messagePayload;
@@ -1126,7 +1146,7 @@ export default {
 </script>
 
 <template>
-  <ReplyBoxBanner :message="message" :is-on-private-note="isOnPrivateNote" />
+  <ReplyBoxBanner :message="message" :is-on-private-note="isPrivate" />
   <div ref="replyEditor" class="reply-box" :class="replyBoxClass">
     <ReplyTopPanel
       :mode="replyType"
@@ -1206,7 +1226,7 @@ export default {
           v-model="message"
           :editor-id="editorStateId"
           class="input popover-prosemirror-menu"
-          :is-private="isOnPrivateNote"
+          :is-private="isPrivate"
           :placeholder="messagePlaceHolder"
           :update-selection-with="updateEditorSelectionWith"
           :min-height="4"
@@ -1281,7 +1301,7 @@ export default {
         :enable-whats-app-templates="showWhatsappTemplates"
         :enable-content-templates="showContentTemplates"
         :inbox="inbox"
-        :is-on-private-note="isOnPrivateNote"
+        :is-on-private-note="isPrivate"
         :is-recording-audio="isRecordingAudio"
         :is-send-disabled="isReplyButtonDisabled"
         :is-note="isPrivate"

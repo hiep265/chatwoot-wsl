@@ -3,12 +3,195 @@ require 'rails_helper'
 RSpec.describe 'AiControlController', type: :request do
   let(:account) { create(:account) }
   let(:comment_webhook_config_key) { "ai_control:comment_webhook_url:#{account.id}" }
+  let(:reply_replay_config_key) { "ai_control:chatwoot_reply_replay:config:#{account.id}" }
 
   after do
     begin
       ::Redis::Alfred.delete(comment_webhook_config_key)
+      ::Redis::Alfred.delete(reply_replay_config_key)
     rescue StandardError
       nil
+    end
+  end
+
+  describe 'GET /api/v1/accounts/{account.id}/ai_control/chatwoot_agents' do
+    context 'when it is an unauthenticated user' do
+      it 'returns unauthorized' do
+        get "/api/v1/accounts/#{account.id}/ai_control/chatwoot_agents", as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when it is an authenticated user' do
+      let(:user) { create(:user, account: account, role: :administrator) }
+
+      it 'forwards the agent catalog from chatbotlevan' do
+        with_modified_env(
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
+          'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
+          'CHATBOTLEVAN_API_TOKEN' => 'test-token'
+        ) do
+          stub_request(:get, 'http://chatbotlevan.test/webhooks/chatwoot/agents')
+            .with(headers: { 'Authorization' => 'Bearer test-token' })
+            .to_return(
+              status: 200,
+              body: {
+                agents: [
+                  {
+                    id: 'instagram_sales',
+                    name: 'Instagram Sales',
+                    chatwoot_message_compatible: true
+                  }
+                ]
+              }.to_json,
+              headers: { 'Content-Type' => 'application/json' }
+            )
+
+          get "/api/v1/accounts/#{account.id}/ai_control/chatwoot_agents",
+              headers: user.create_new_auth_token,
+              as: :json
+
+          expect(response).to have_http_status(:ok)
+          expect(response.parsed_body.dig('agents', 0, 'id')).to eq('instagram_sales')
+        end
+      end
+
+      it 'returns unprocessable entity if CHATBOTLEVAN_BASE_URL is missing' do
+        with_modified_env('CHATBOTLEVAN_INTERNAL_BASE_URL' => '', 'CHATBOTLEVAN_BASE_URL' => '') do
+          get "/api/v1/accounts/#{account.id}/ai_control/chatwoot_agents",
+              headers: user.create_new_auth_token,
+              as: :json
+
+          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response.parsed_body['error']).to eq('CHATBOTLEVAN_BASE_URL is not configured')
+        end
+      end
+    end
+  end
+
+  describe 'GET/PUT /api/v1/accounts/{account.id}/ai_control/chatwoot_reply_replay_config' do
+    context 'when it is an unauthenticated user' do
+      it 'returns unauthorized' do
+        get "/api/v1/accounts/#{account.id}/ai_control/chatwoot_reply_replay_config", as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when it is an authenticated user' do
+      let(:user) { create(:user, account: account, role: :administrator) }
+
+      it 'returns the default disabled configuration' do
+        get "/api/v1/accounts/#{account.id}/ai_control/chatwoot_reply_replay_config",
+            headers: user.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body).to include(
+          'enabled' => false,
+          'replay_after_minutes' => 60,
+          'active_window_hours' => 24
+        )
+      end
+
+      it 'stores and returns the updated configuration' do
+        put "/api/v1/accounts/#{account.id}/ai_control/chatwoot_reply_replay_config",
+            headers: user.create_new_auth_token,
+            params: { enabled: true },
+            as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body).to include(
+          'enabled' => true,
+          'replay_after_minutes' => 60,
+          'active_window_hours' => 24
+        )
+
+        stored = JSON.parse(::Redis::Alfred.get(reply_replay_config_key))
+        expect(stored['enabled']).to eq(true)
+      end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/ai_control/wiki_learning_wrong_answer' do
+    context 'when it is an unauthenticated user' do
+      it 'returns unauthorized' do
+        post "/api/v1/accounts/#{account.id}/ai_control/wiki_learning_wrong_answer",
+             params: { conversation_id: '129', bot_message_id: '77' },
+             as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when it is an authenticated user' do
+      let(:user) { create(:user, account: account, role: :administrator, email: 'ops@example.com') }
+
+      it 'forwards the marked wrong answer to chatbotlevan wiki learning' do
+        with_modified_env(
+          'CHATBOTLEVAN_INTERNAL_BASE_URL' => '',
+          'CHATBOTLEVAN_BASE_URL' => 'http://chatbotlevan.test',
+          'CHATBOTLEVAN_API_TOKEN' => 'test-token'
+        ) do
+          stub_request(:post, 'http://chatbotlevan.test/learning/wiki/wrong-answer')
+            .with(
+              headers: { 'Authorization' => 'Bearer test-token' },
+              body: hash_including(
+                'account_id' => account.id.to_s,
+                'conversation_id' => '129',
+                'bot_message_id' => '77',
+                'reviewer_note' => 'Bot noi sai ve khoa AI',
+                'marked_by' => 'ops@example.com'
+              )
+            )
+            .to_return(
+              status: 200,
+              body: {
+                status: 'completed',
+                source_count: 1,
+                batch_runs: 1,
+                written_artifacts: 1
+              }.to_json,
+              headers: { 'Content-Type' => 'application/json' }
+            )
+
+          post "/api/v1/accounts/#{account.id}/ai_control/wiki_learning_wrong_answer",
+               headers: user.create_new_auth_token,
+               params: {
+                 conversation_id: 129,
+                 bot_message_id: 77,
+                 reviewer_note: 'Bot noi sai ve khoa AI'
+               },
+               as: :json
+
+          expect(response).to have_http_status(:ok)
+          expect(response.parsed_body['status']).to eq('completed')
+          expect(response.parsed_body['written_artifacts']).to eq(1)
+        end
+      end
+
+      it 'returns unprocessable entity if CHATBOTLEVAN_BASE_URL is missing' do
+        with_modified_env('CHATBOTLEVAN_INTERNAL_BASE_URL' => '', 'CHATBOTLEVAN_BASE_URL' => '') do
+          post "/api/v1/accounts/#{account.id}/ai_control/wiki_learning_wrong_answer",
+               headers: user.create_new_auth_token,
+               params: { conversation_id: 129, bot_message_id: 77 },
+               as: :json
+
+          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response.parsed_body['error']).to eq('CHATBOTLEVAN_BASE_URL is not configured')
+        end
+      end
+
+      it 'returns unprocessable entity when identifiers are missing' do
+        post "/api/v1/accounts/#{account.id}/ai_control/wiki_learning_wrong_answer",
+             headers: user.create_new_auth_token,
+             params: { conversation_id: 129 },
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['error']).to eq('bot_message_id is required')
+      end
     end
   end
 

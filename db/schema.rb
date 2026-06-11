@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_03_18_190000) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_19_090000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -74,6 +74,25 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_18_190000) do
     t.jsonb "internal_attributes", default: {}, null: false
     t.jsonb "settings", default: {}
     t.index ["status"], name: "index_accounts_on_status"
+  end
+
+  create_table "account_social_app_configs", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "provider", null: false
+    t.string "app_id"
+    t.string "app_secret"
+    t.string "verify_token"
+    t.string "configuration_id"
+    t.string "api_version"
+    t.string "consumer_key"
+    t.string "consumer_secret"
+    t.string "environment"
+    t.jsonb "settings", default: {}
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "provider"], name: "index_account_social_app_configs_on_account_id_and_provider", unique: true
+    t.index ["account_id"], name: "index_account_social_app_configs_on_account_id"
+    t.index ["provider"], name: "index_account_social_app_configs_on_provider"
   end
 
   create_table "action_mailbox_inbound_emails", force: :cascade do |t|
@@ -1033,6 +1052,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_18_190000) do
     t.integer "sender_name_type", default: 0, null: false
     t.string "business_name"
     t.jsonb "csat_config", default: {}, null: false
+    t.jsonb "custom_attributes", default: {}, null: false
     t.index ["account_id"], name: "index_inboxes_on_account_id"
     t.index ["channel_id", "channel_type"], name: "index_inboxes_on_channel_id_and_channel_type"
     t.index ["portal_id"], name: "index_inboxes_on_portal_id"
@@ -1454,6 +1474,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_18_190000) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "account_social_app_configs", "accounts"
   add_foreign_key "aftercare_audit_events", "accounts"
   add_foreign_key "aftercare_audit_events", "aftercare_enrollments"
   add_foreign_key "aftercare_dispatch_logs", "aftercare_enrollment_steps"

@@ -483,6 +483,17 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.parsed_body['name']).to eq 'new test inbox'
       end
 
+      it 'stores selected Kimi agent in inbox custom attributes when administrator' do
+        patch "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}",
+              headers: admin.create_new_auth_token,
+              params: valid_params.merge(custom_attributes: { kimi_agent_name: 'instagram_sales' }),
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(inbox.reload.custom_attributes).to include('kimi_agent_name' => 'instagram_sales')
+        expect(response.parsed_body.dig('custom_attributes', 'kimi_agent_name')).to eq('instagram_sales')
+      end
+
       it 'updates api inbox when administrator' do
         api_channel = create(:channel_api, account: account)
         api_inbox = create(:inbox, channel: api_channel, account: account)

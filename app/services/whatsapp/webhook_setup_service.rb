@@ -3,7 +3,7 @@ class Whatsapp::WebhookSetupService
     @channel = channel
     @waba_id = waba_id
     @access_token = access_token
-    @api_client = Whatsapp::FacebookApiClient.new(access_token)
+    @api_client = Whatsapp::FacebookApiClient.new(access_token, account: channel.account)
   end
 
   def perform

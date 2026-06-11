@@ -46,7 +46,7 @@ RSpec.describe 'TikTok Authorization API', type: :request do
         end.new
 
         expected_state = helper.generate_tiktok_token(account.id)
-        expected_url = Tiktok::AuthClient.authorize_url(state: expected_state)
+        expected_url = Tiktok::AuthClient.authorize_url(state: expected_state, account: account)
 
         expect(response.parsed_body['url']).to eq(expected_url)
       end

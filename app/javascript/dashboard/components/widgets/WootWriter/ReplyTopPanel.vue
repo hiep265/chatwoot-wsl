@@ -52,14 +52,9 @@ export default {
     const handleNoteClick = () => {
       setReplyMode(REPLY_EDITOR_MODES.NOTE);
     };
-    const handleModeToggle = () => {
-      const newMode =
-        props.mode === REPLY_EDITOR_MODES.REPLY
-          ? REPLY_EDITOR_MODES.NOTE
-          : REPLY_EDITOR_MODES.REPLY;
-      setReplyMode(newMode);
+    const handleAiNoteClick = () => {
+      setReplyMode(REPLY_EDITOR_MODES.AI_NOTE);
     };
-
     const { captainTasksEnabled } = useCaptain();
     const showCopilotMenu = ref(false);
 
@@ -85,13 +80,18 @@ export default {
         action: () => handleReplyClick(),
         allowOnFocusedInput: true,
       },
+      'Alt+KeyA': {
+        action: () => handleAiNoteClick(),
+        allowOnFocusedInput: true,
+      },
     };
     useKeyboardEvents(keyboardEvents);
 
     return {
-      handleModeToggle,
+      setReplyMode,
       handleReplyClick,
       handleNoteClick,
+      handleAiNoteClick,
       REPLY_EDITOR_MODES,
       captainTasksEnabled,
       handleCopilotAction,
@@ -111,6 +111,11 @@ export default {
         'is-active': this.mode === REPLY_EDITOR_MODES.NOTE,
       };
     },
+    aiNoteButtonClass() {
+      return {
+        'is-active': this.mode === REPLY_EDITOR_MODES.AI_NOTE,
+      };
+    },
     charLengthClass() {
       return this.charactersRemaining < 0 ? 'text-n-ruby-9' : 'text-n-slate-11';
     },
@@ -127,12 +132,25 @@ export default {
   <div
     class="flex justify-between gap-2 h-[3.25rem] items-center ltr:pl-3 ltr:pr-2 rtl:pr-3 rtl:pl-2"
   >
-    <EditorModeToggle
-      :mode="mode"
-      :disabled="disabled"
-      :is-reply-restricted="isReplyRestricted"
-      @toggle-mode="handleModeToggle"
-    />
+    <div class="flex items-center gap-2 min-w-0">
+      <EditorModeToggle
+        :mode="mode"
+        :disabled="disabled"
+        :is-reply-restricted="isReplyRestricted"
+        @set-mode="setReplyMode"
+      />
+      <NextButton
+        data-test-id="ai-note-mode-button"
+        :label="$t('CONVERSATION.REPLYBOX.AI_NOTE')"
+        :variant="mode === REPLY_EDITOR_MODES.AI_NOTE ? 'solid' : 'faded'"
+        color="amber"
+        sm
+        icon="i-ph-sparkle"
+        :disabled="disabled"
+        class="shrink-0"
+        @click="handleAiNoteClick"
+      />
+    </div>
     <div class="flex items-center mx-4 my-0">
       <div v-if="isMessageLengthReachingThreshold" class="text-xs">
         <span :class="charLengthClass">

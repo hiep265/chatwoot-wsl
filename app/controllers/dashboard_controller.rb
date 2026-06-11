@@ -27,6 +27,7 @@ class DashboardController < ActionController::Base
   ].freeze
 
   before_action :set_application_pack
+  before_action :set_account_for_app_config
   before_action :set_global_config
   before_action :set_dashboard_scripts
   around_action :switch_locale
@@ -38,6 +39,18 @@ class DashboardController < ActionController::Base
   def index; end
 
   private
+
+  # When the URL includes an account_id, load it so app_config can use account-scoped overrides
+  def set_account_for_app_config
+    account_id = params[:account_id].presence || account_id_from_frontend_path
+    return if account_id.blank?
+
+    @account_for_config = Account.find_by(id: account_id)
+  end
+
+  def account_id_from_frontend_path
+    params[:params].to_s[%r{\Aaccounts/(\d+)(?:/|$)}, 1]
+  end
 
   def ensure_html_format
     render json: { error: 'Please use API routes instead of dashboard routes for JSON requests' }, status: :not_acceptable if request.format.json?
@@ -67,16 +80,19 @@ class DashboardController < ActionController::Base
   end
 
   def app_config
+    resolver = @account_for_config ? AccountSocialAppConfigResolver.new(@account_for_config) : nil
+
     {
       APP_VERSION: Chatwoot.config[:version],
       VAPID_PUBLIC_KEY: VapidService.public_key,
       ENABLE_ACCOUNT_SIGNUP: GlobalConfigService.load('ENABLE_ACCOUNT_SIGNUP', 'false'),
-      FB_APP_ID: GlobalConfigService.load('FB_APP_ID', ''),
-      INSTAGRAM_APP_ID: GlobalConfigService.load('INSTAGRAM_APP_ID', ''),
-      TIKTOK_APP_ID: GlobalConfigService.load('TIKTOK_APP_ID', ''),
-      FACEBOOK_API_VERSION: GlobalConfigService.load('FACEBOOK_API_VERSION', 'v18.0'),
-      WHATSAPP_APP_ID: GlobalConfigService.load('WHATSAPP_APP_ID', ''),
-      WHATSAPP_CONFIGURATION_ID: GlobalConfigService.load('WHATSAPP_CONFIGURATION_ID', ''),
+      FB_APP_ID: resolver&.load('FB_APP_ID', '') || GlobalConfigService.load('FB_APP_ID', ''),
+      INSTAGRAM_APP_ID: resolver&.load('INSTAGRAM_APP_ID', '') || GlobalConfigService.load('INSTAGRAM_APP_ID', ''),
+      TIKTOK_APP_ID: resolver&.load('TIKTOK_APP_ID', '') || GlobalConfigService.load('TIKTOK_APP_ID', ''),
+      FACEBOOK_API_VERSION: resolver&.load('FACEBOOK_API_VERSION', 'v18.0') || GlobalConfigService.load('FACEBOOK_API_VERSION', 'v18.0'),
+      WHATSAPP_APP_ID: resolver&.load('WHATSAPP_APP_ID', '') || GlobalConfigService.load('WHATSAPP_APP_ID', ''),
+      WHATSAPP_CONFIGURATION_ID: resolver&.load('WHATSAPP_CONFIGURATION_ID', '') || GlobalConfigService.load('WHATSAPP_CONFIGURATION_ID', ''),
+      WHATSAPP_API_VERSION: resolver&.load('WHATSAPP_API_VERSION', 'v22.0') || GlobalConfigService.load('WHATSAPP_API_VERSION', 'v22.0'),
       IS_ENTERPRISE: ChatwootApp.enterprise?,
       AZURE_APP_ID: GlobalConfigService.load('AZURE_APP_ID', ''),
       GIT_SHA: GIT_HASH,

@@ -92,9 +92,13 @@ Rails.application.routes.draw do
             end
           end
           post 'ai_control/train_faq', to: 'ai_control#train_faq'
+          get 'ai_control/chatwoot_agents', to: 'ai_control#chatwoot_agents'
+          get 'ai_control/chatwoot_reply_replay_config', to: 'ai_control#chatwoot_reply_replay_config'
+          put 'ai_control/chatwoot_reply_replay_config', to: 'ai_control#update_chatwoot_reply_replay_config'
           get 'ai_control/wiki_learning_schedule', to: 'ai_control#wiki_learning_schedule'
           put 'ai_control/wiki_learning_schedule', to: 'ai_control#update_wiki_learning_schedule'
           post 'ai_control/wiki_learning_schedule/run_now', to: 'ai_control#run_wiki_learning_schedule_now'
+          post 'ai_control/wiki_learning_wrong_answer', to: 'ai_control#wiki_learning_wrong_answer'
           get 'ai_control/payment_review_cases', to: 'ai_control#payment_review_cases'
           delete 'ai_control/payment_review_cases/:case_id', to: 'ai_control#delete_payment_review_case'
           post 'ai_control/payment_review_cases/:case_id/review', to: 'ai_control#review_payment_review_case'
@@ -610,6 +614,8 @@ Rails.application.routes.draw do
   mount Facebook::Messenger::Server, at: 'bot'
   get 'webhooks/twitter', to: 'api/v1/webhooks#twitter_crc'
   post 'webhooks/twitter', to: 'api/v1/webhooks#twitter_events'
+  get 'webhooks/twitter/:account_id', to: 'api/v1/webhooks#twitter_crc_for_account', as: 'account_twitter_webhook'
+  post 'webhooks/twitter/:account_id', to: 'api/v1/webhooks#twitter_events_for_account'
   post 'webhooks/line/:line_channel_id', to: 'webhooks/line#process_payload'
   post 'webhooks/telegram/:bot_token', to: 'webhooks/telegram#process_payload'
   post 'webhooks/sms/:phone_number', to: 'webhooks/sms#process_payload'
@@ -671,6 +677,7 @@ Rails.application.routes.draw do
       resources :accounts, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         post :seed, on: :member
         post :reset_cache, on: :member
+        resource :social_app_config, only: [:show, :update, :destroy]
       end
       resources :users, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         delete :avatar, on: :member, action: :destroy_avatar

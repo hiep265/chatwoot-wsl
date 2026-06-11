@@ -11,8 +11,8 @@ RSpec.describe 'Webhooks::TiktokController', type: :request do
     }
   end
 
-  def signature_for(body)
-    OpenSSL::HMAC.hexdigest('SHA256', client_secret, "#{timestamp}.#{body}")
+  def signature_for(body, secret = client_secret)
+    OpenSSL::HMAC.hexdigest('SHA256', secret, "#{timestamp}.#{body}")
   end
 
   before do
@@ -60,5 +60,22 @@ RSpec.describe 'Webhooks::TiktokController', type: :request do
     end
 
     expect(response).to have_http_status(:unauthorized)
+  end
+
+  it 'accepts account-level app secrets for signature verification' do
+    account = create(:account)
+    create(:account_social_app_config, account: account, provider: 'tiktok', app_secret: 'account-tiktok-secret')
+    allow(Webhooks::TiktokEventsJob).to receive(:perform_later)
+
+    body = event_payload.to_json
+    post '/webhooks/tiktok',
+         params: body,
+         headers: {
+           'CONTENT_TYPE' => 'application/json',
+           'Tiktok-Signature' => "t=#{timestamp},s=#{signature_for(body, 'account-tiktok-secret')}"
+         }
+
+    expect(response).to have_http_status(:success)
+    expect(Webhooks::TiktokEventsJob).to have_received(:perform_later)
   end
 end

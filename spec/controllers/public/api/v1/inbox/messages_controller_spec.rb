@@ -16,6 +16,27 @@ RSpec.describe 'Public Inbox Contact Conversation Messages API', type: :request 
       data = response.parsed_body
       expect(data.length).to eq 2
     end
+
+    it 'does not return session trace rows in the public timeline' do
+      create(:message, account: conversation.account, inbox: conversation.inbox, conversation: conversation)
+      create(
+        :message,
+        account: conversation.account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :session_trace,
+        private: true,
+        content: 'hidden public trace'
+      )
+
+      get "/public/api/v1/inboxes/#{api_channel.identifier}/contacts/#{contact_inbox.source_id}/conversations/#{conversation.display_id}/messages"
+
+      expect(response).to have_http_status(:success)
+      data = response.parsed_body
+
+      expect(data.pluck('message_type')).not_to include(4)
+      expect(data.pluck('content')).not_to include('hidden public trace')
+    end
   end
 
   describe 'POST /public/api/v1/inboxes/{identifier}/contact/{source_id}/conversations/{conversation_id}/messages' do

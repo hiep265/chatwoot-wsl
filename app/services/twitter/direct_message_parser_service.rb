@@ -2,7 +2,7 @@ class Twitter::DirectMessageParserService < Twitter::WebhooksBaseService
   pattr_initialize [:payload]
 
   def perform
-    return if source_app_id == parent_app_id
+    return if Array(parent_app_id).include?(source_app_id)
 
     set_inbox
     ensure_contacts
@@ -50,7 +50,10 @@ class Twitter::DirectMessageParserService < Twitter::WebhooksBaseService
   end
 
   def parent_app_id
-    ENV.fetch('TWITTER_APP_ID', '')
+    # Check both global and all account-level Twitter app IDs
+    global_id = ENV.fetch('TWITTER_APP_ID', '')
+    account_ids = AccountSocialAppConfig.where(provider: 'twitter').where.not(app_id: [nil, '']).pluck(:app_id)
+    ([global_id] + account_ids).compact_blank
   end
 
   def media
@@ -94,7 +97,10 @@ class Twitter::DirectMessageParserService < Twitter::WebhooksBaseService
 
   def api_client
     @api_client ||= begin
-      consumer = OAuth::Consumer.new(ENV.fetch('TWITTER_CONSUMER_KEY', nil), ENV.fetch('TWITTER_CONSUMER_SECRET', nil),
+      resolver = AccountSocialAppConfigResolver.new(@inbox.account)
+      consumer_key = resolver.load('TWITTER_CONSUMER_KEY', nil) || ENV.fetch('TWITTER_CONSUMER_KEY', nil)
+      consumer_secret = resolver.load('TWITTER_CONSUMER_SECRET', nil) || ENV.fetch('TWITTER_CONSUMER_SECRET', nil)
+      consumer = OAuth::Consumer.new(consumer_key, consumer_secret,
                                      { site: 'https://api.twitter.com' })
       token = { oauth_token: @inbox.channel.twitter_access_token, oauth_token_secret: @inbox.channel.twitter_access_token_secret }
       OAuth::AccessToken.from_hash(consumer, token)

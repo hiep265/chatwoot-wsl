@@ -1,4 +1,6 @@
 .bundle
+.git
+.pnpm-store
 .env
 .env.*
 docker-compose.*
@@ -8,8 +10,19 @@ log
 storage
 public/system
 tmp
+docs
+spec
+.github
+.circleci
+.devcontainer
+.windsurf
+.qlty
+.husky
+.dependabot
 .codeclimate.yml
 public/packs
+public/vite
+public/vite-dev
 node_modules
 vendor/bundle
 .DS_Store

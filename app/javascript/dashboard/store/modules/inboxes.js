@@ -200,10 +200,10 @@ export const actions = {
       // Ignore error
     }
   },
-  get: async ({ commit }) => {
+  get: async ({ commit }, { force = false } = {}) => {
     commit(types.default.SET_INBOXES_UI_FLAG, { isFetching: true });
     try {
-      const response = await InboxesAPI.get(true);
+      const response = await InboxesAPI.get(!force);
       commit(types.default.SET_INBOXES_UI_FLAG, { isFetching: false });
       commit(types.default.SET_INBOXES, response.data.payload);
     } catch (error) {

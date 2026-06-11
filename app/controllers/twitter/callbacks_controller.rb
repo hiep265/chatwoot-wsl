@@ -37,7 +37,7 @@ class Twitter::CallbacksController < Twitter::BaseController
   end
 
   def ensure_access_token
-    twitter_client.access_token(
+    twitter_client(account: account).access_token(
       oauth_token: permitted_params[:oauth_token],
       oauth_verifier: permitted_params[:oauth_verifier]
     )
@@ -58,7 +58,7 @@ class Twitter::CallbacksController < Twitter::BaseController
   end
 
   def save_profile_image(inbox)
-    response = twitter_client.user_show(screen_name: inbox.name)
+    response = twitter_client(account: account).user_show(screen_name: inbox.name)
 
     return unless response.status.to_i == 200
 

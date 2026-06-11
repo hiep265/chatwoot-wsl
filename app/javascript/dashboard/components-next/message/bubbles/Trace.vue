@@ -26,7 +26,27 @@ const contextMessage = computed(() => {
   );
 });
 
+const metricsPayload = computed(() => {
+  return contentAttributes.value?.metrics || {};
+});
+
+const compactionPayload = computed(() => {
+  return contentAttributes.value?.compaction || {};
+});
+
+const readField = (payload, camelKey, snakeKey) => {
+  return payload?.[camelKey] ?? payload?.[snakeKey] ?? null;
+};
+
 const roleLabel = computed(() => {
+  if (traceType.value === 'kimi_context_metrics') {
+    return 'metrics';
+  }
+
+  if (traceType.value === 'kimi_compaction_event') {
+    return 'compaction';
+  }
+
   return contextMessage.value?.role || 'assistant';
 });
 
@@ -105,7 +125,11 @@ const compactPath = value => {
   if (typeof value !== 'string') return '';
 
   const normalized = value.replace(/\\/g, '/');
-  const preferredPrefixes = ['/chatbotlevan/', '/chatwoot-wsl/', '/kimi-cli-fork/'];
+  const preferredPrefixes = [
+    '/chatbotlevan/',
+    '/chatwoot-wsl/',
+    '/kimi-cli-fork/',
+  ];
   const matchingPrefix = preferredPrefixes.find(prefix =>
     normalized.includes(prefix)
   );
@@ -123,7 +147,9 @@ const compactPath = value => {
 };
 
 const truncate = (value, maxLength = 96) => {
-  const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+  const normalized = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (normalized.length <= maxLength) return normalized;
   return `${normalized.slice(0, maxLength - 1)}…`;
 };
@@ -189,7 +215,73 @@ const summarizeTraceText = value => {
   return truncate(firstMeaningfulLine, 110);
 };
 
+const summarizeMetrics = () => {
+  const tokenCount = Number(
+    readField(metricsPayload.value, 'tokenCount', 'token_count') || 0
+  );
+  const maxContextSize = Number(
+    readField(metricsPayload.value, 'maxContextSize', 'max_context_size') || 0
+  );
+  const reservedContextSize = Number(
+    readField(
+      metricsPayload.value,
+      'reservedContextSize',
+      'reserved_context_size'
+    ) || 0
+  );
+  const explicitUsage = readField(
+    metricsPayload.value,
+    'contextUsage',
+    'context_usage'
+  );
+  let usage = 0;
+  if (explicitUsage !== null && explicitUsage !== undefined) {
+    usage = Number(explicitUsage);
+  } else if (maxContextSize > 0) {
+    usage = tokenCount / maxContextSize;
+  }
+
+  return `Context ${(usage * 100).toFixed(1)}% · ${tokenCount}/${maxContextSize} · reserve ${reservedContextSize}`;
+};
+
+const summarizeCompaction = () => {
+  const phase = String(
+    readField(compactionPayload.value, 'phase', 'phase') || ''
+  )
+    .trim()
+    .toLowerCase();
+
+  if (phase === 'begin') {
+    return 'Auto compact started';
+  }
+
+  const before = Number(
+    readField(
+      compactionPayload.value,
+      'messageCountBefore',
+      'message_count_before'
+    ) || 0
+  );
+  const after = Number(
+    readField(
+      compactionPayload.value,
+      'messageCountAfter',
+      'message_count_after'
+    ) || 0
+  );
+
+  return `Compaction completed · ${before} -> ${after} messages`;
+};
+
 const summaryText = computed(() => {
+  if (traceType.value === 'kimi_context_metrics') {
+    return summarizeMetrics();
+  }
+
+  if (traceType.value === 'kimi_compaction_event') {
+    return summarizeCompaction();
+  }
+
   if (firstToolCall.value) {
     return summarizeToolCall(firstToolCall.value);
   }
@@ -202,6 +294,20 @@ const summaryText = computed(() => {
 });
 
 const summaryTone = computed(() => {
+  if (traceType.value === 'kimi_context_metrics') {
+    return {
+      text: 'text-n-blue-text',
+      dot: 'bg-n-blue-text',
+    };
+  }
+
+  if (traceType.value === 'kimi_compaction_event') {
+    return {
+      text: 'text-n-amber-9',
+      dot: 'bg-n-amber-9',
+    };
+  }
+
   const lowered = summaryText.value.toLowerCase();
 
   if (
@@ -243,7 +349,15 @@ const summaryTone = computed(() => {
 });
 
 const detailPayload = computed(() => {
-  return JSON.stringify(contextMessage.value, null, 2);
+  const payload =
+    contentAttributes.value && Object.keys(contentAttributes.value).length > 0
+      ? contentAttributes.value
+      : {
+          contextMessage: contextMessage.value,
+          content: content.value,
+        };
+
+  return JSON.stringify(payload, null, 2);
 });
 
 const detailArguments = computed(() => {
@@ -275,12 +389,20 @@ const toggleExpanded = () => {
         class="mt-1.5 size-1.5 rounded-full shrink-0"
         :class="summaryTone.dot"
       />
-      <span
-        class="min-w-0 flex-1 leading-5 break-words"
-        :class="summaryTone.text"
-        data-testid="trace-summary"
-      >
-        {{ summaryText }}
+      <span class="min-w-0 flex-1 flex flex-col gap-0.5">
+        <span
+          class="uppercase tracking-[0.18em] text-n-slate-9"
+          data-testid="trace-label"
+        >
+          Session Trace
+        </span>
+        <span
+          class="leading-5 break-words"
+          :class="summaryTone.text"
+          data-testid="trace-summary"
+        >
+          {{ summaryText }}
+        </span>
       </span>
       <span class="shrink-0 text-n-slate-9">
         {{ isExpanded ? 'Hide' : 'View' }}
@@ -301,10 +423,7 @@ const toggleExpanded = () => {
         <span v-if="toolCallId" class="trace-chip px-2 py-1 rounded-full">
           {{ toolCallId }}
         </span>
-        <span
-          v-if="triggerMessageId"
-          class="trace-chip px-2 py-1 rounded-full"
-        >
+        <span v-if="triggerMessageId" class="trace-chip px-2 py-1 rounded-full">
           trigger #{{ triggerMessageId }}
         </span>
       </div>

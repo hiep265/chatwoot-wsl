@@ -19,6 +19,18 @@ describe Twitter::WebhookSubscribeService do
   end
 
   describe '#perform' do
+    context 'when the account has a Twitter app config' do
+      before do
+        create(:account_social_app_config, account: account, provider: 'twitter', consumer_secret: 'account-twitter-secret')
+      end
+
+      it 'uses the account-specific Twitter webhook URL' do
+        expect(webhook_subscribe_service.send(:twitter_url)).to eq(
+          account_twitter_webhook_url(account_id: account.id, protocol: 'https')
+        )
+      end
+    end
+
     context 'when webhook is not registered' do
       it 'calls register_webhook' do
         allow(twitter_client).to receive(:fetch_webhooks).and_return(

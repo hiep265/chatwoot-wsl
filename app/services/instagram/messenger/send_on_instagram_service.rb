@@ -9,7 +9,8 @@ class Instagram::Messenger::SendOnInstagramService < Instagram::BaseSendService
   # @see https://developers.facebook.com/docs/messenger-platform/instagram/features/send-message
   def send_message(message_content)
     access_token = channel.page_access_token
-    app_secret_proof = calculate_app_secret_proof(GlobalConfigService.load('FB_APP_SECRET', ''), access_token)
+    resolver = AccountSocialAppConfigResolver.new(channel.account)
+    app_secret_proof = calculate_app_secret_proof(resolver.load('FB_APP_SECRET', ''), access_token)
     query = { access_token: access_token }
     query[:appsecret_proof] = app_secret_proof if app_secret_proof
 
@@ -29,9 +30,8 @@ class Instagram::Messenger::SendOnInstagramService < Instagram::BaseSendService
   end
 
   def merge_human_agent_tag(params)
-    global_config = GlobalConfig.get('ENABLE_MESSENGER_CHANNEL_HUMAN_AGENT')
-
-    return params unless global_config['ENABLE_MESSENGER_CHANNEL_HUMAN_AGENT']
+    resolver = AccountSocialAppConfigResolver.new(channel.account)
+    return params unless resolver.load('ENABLE_MESSENGER_CHANNEL_HUMAN_AGENT', nil)
 
     params[:messaging_type] = 'MESSAGE_TAG'
     params[:tag] = 'HUMAN_AGENT'

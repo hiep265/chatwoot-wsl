@@ -38,6 +38,29 @@ RSpec.describe '/api/v1/widget/messages', type: :request do
         json_response = response.parsed_body
         expect(json_response['payload'].length).to eq(0)
       end
+
+      it 'does not expose session trace rows in the widget timeline' do
+        create(
+          :message,
+          account: account,
+          inbox: web_widget.inbox,
+          conversation: conversation,
+          message_type: :session_trace,
+          private: true,
+          content: 'hidden widget trace'
+        )
+
+        get api_v1_widget_messages_url,
+            params: { website_token: web_widget.website_token },
+            headers: { 'X-Auth-Token' => token },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        payload = response.parsed_body['payload']
+
+        expect(payload.pluck('message_type')).not_to include(4)
+        expect(payload.pluck('content')).not_to include('hidden widget trace')
+      end
     end
   end
 

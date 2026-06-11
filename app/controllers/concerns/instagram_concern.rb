@@ -7,7 +7,7 @@ module InstagramConcern
       client_secret,
       {
         site: 'https://api.instagram.com',
-        authorize_url: 'https://api.instagram.com/oauth/authorize',
+        authorize_url: 'https://www.instagram.com/oauth/authorize',
         token_url: 'https://api.instagram.com/oauth/access_token',
         auth_scheme: :request_body,
         token_method: :post
@@ -17,12 +17,26 @@ module InstagramConcern
 
   private
 
+  def instagram_resolver
+    @instagram_resolver ||= AccountSocialAppConfigResolver.new(resolver_account)
+  end
+
+  def resolver_account
+    @resolver_account ||= Current.account || @account || callback_account
+  end
+
+  def callback_account
+    account if respond_to?(:account, true)
+  rescue StandardError
+    nil
+  end
+
   def client_id
-    GlobalConfigService.load('INSTAGRAM_APP_ID', nil)
+    instagram_resolver.load('INSTAGRAM_APP_ID', nil)
   end
 
   def client_secret
-    GlobalConfigService.load('INSTAGRAM_APP_SECRET', nil)
+    instagram_resolver.load('INSTAGRAM_APP_SECRET', nil)
   end
 
   def exchange_for_long_lived_token(short_lived_token)
@@ -30,8 +44,7 @@ module InstagramConcern
     params = {
       grant_type: 'ig_exchange_token',
       client_secret: client_secret,
-      access_token: short_lived_token,
-      client_id: client_id
+      access_token: short_lived_token
     }
 
     make_api_request(endpoint, params, 'Failed to exchange token')

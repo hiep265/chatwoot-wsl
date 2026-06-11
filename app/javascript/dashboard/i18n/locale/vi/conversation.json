@@ -186,6 +186,7 @@
       "DISABLE_SIGN_TOOLTIP": "Tắt chữ ký",
       "MSG_INPUT": "Shift + enter cho dòng mới. Bắt đầu với '/' để chọn Câu trả lời soạn trước.",
       "PRIVATE_MSG_INPUT": "Shift + enter cho dòng mới. Điều này sẽ chỉ hiển thị cho Đại lý",
+      "AI_NOTE_MSG_INPUT": "Ghi hướng dẫn cho AI. Khách sẽ không thấy nội dung này.",
       "MESSAGE_SIGNATURE_NOT_CONFIGURED": "Chứ ký cuối tin nhắn chưa được cài đặt, xin hãy cài đặt một chữ ký trong phần cài đặt hồ sơ.",
       "CLICK_HERE": "Bấm vào đây để cập nhật",
       "WHATSAPP_TEMPLATES": "Mẫu Whatsapp"
@@ -193,6 +194,7 @@
     "REPLYBOX": {
       "REPLY": "Trả lời",
       "PRIVATE_NOTE": "Lưu ý riêng",
+      "AI_NOTE": "Ghi chú cho AI",
       "SEND": "Gửi",
       "CREATE": "Thêm ghi chú",
       "INSERT_READ_MORE": "Đọc thêm",

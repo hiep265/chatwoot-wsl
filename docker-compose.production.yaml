@@ -45,6 +45,8 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     restart: always
+    ports:
+      - '5433:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
@@ -70,5 +72,8 @@ networks:
 
 volumes:
   storage_data:
+    name: chatwoot_storage_data
   postgres_data:
+    name: 93efe40ee9a9cb006e8358ed29da8fd67c1547f78b9deefccfc2a96999b13cb9
   redis_data:
+    name: chatwoot_redis_data

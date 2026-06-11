@@ -58,6 +58,18 @@ RSpec.describe Conversations::UpdateMessageStatusJob do
       end.not_to change(message.reload, :status)
     end
 
+    it 'does not mark session trace messages as read or delivered' do
+      message.update!(message_type: 'session_trace')
+
+      expect do
+        described_class.perform_now(conversation.id, conversation.contact_last_seen_at)
+      end.not_to change(message.reload, :status)
+
+      expect do
+        described_class.perform_now(conversation.id, conversation.contact_last_seen_at, :delivered)
+      end.not_to change(message.reload, :status)
+    end
+
     it 'does not mark messages created after the contact last seen time as read' do
       message.update!(created_at: DateTime.now.utc)
       expect do

@@ -259,6 +259,18 @@ RSpec.describe Inbox do
     end
   end
 
+  describe '#webhook_data' do
+    let(:inbox) { FactoryBot.create(:inbox, custom_attributes: { kimi_agent_name: 'instagram_sales' }) }
+
+    it 'includes custom attributes for downstream webhook routing' do
+      expect(inbox.webhook_data).to include(
+        custom_attributes: {
+          'kimi_agent_name' => 'instagram_sales'
+        }
+      )
+    end
+  end
+
   describe '#sanitized_name' do
     context 'when inbox name contains forbidden characters' do
       it 'removes forbidden and spam-trigger characters' do

@@ -3,11 +3,30 @@ import InboxesAPI from '../../../api/inboxes';
 import AnalyticsHelper from '../../../helper/AnalyticsHelper';
 import { ACCOUNT_EVENTS } from '../../../helper/AnalyticsHelper/events';
 
+const appendInboxProperty = (formData, key, value) => {
+  if (
+    key === 'custom_attributes' &&
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value)
+  ) {
+    Object.keys(value).forEach(attributeKey => {
+      formData.append(
+        `custom_attributes[${attributeKey}]`,
+        value[attributeKey] ?? ''
+      );
+    });
+    return;
+  }
+
+  formData.append(key, value);
+};
+
 export const buildInboxData = inboxParams => {
   const formData = new FormData();
   const { channel = {}, ...inboxProperties } = inboxParams;
   Object.keys(inboxProperties).forEach(key => {
-    formData.append(key, inboxProperties[key]);
+    appendInboxProperty(formData, key, inboxProperties[key]);
   });
   const { selectedFeatureFlags, ...channelParams } = channel;
   // selectedFeatureFlags needs to be empty when creating a website channel

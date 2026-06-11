@@ -16,7 +16,10 @@ import BuildInfo from './components/BuildInfo.vue';
 import AccountDelete from './components/AccountDelete.vue';
 import AutoResolve from './components/AutoResolve.vue';
 import AudioTranscription from './components/AudioTranscription.vue';
+import ChatwootReplyReplay from './components/ChatwootReplyReplay.vue';
+import FaqTraining from './components/FaqTraining.vue';
 import SectionLayout from './components/SectionLayout.vue';
+import WikiLearningSchedule from './components/WikiLearningSchedule.vue';
 
 export default {
   components: {
@@ -27,7 +30,10 @@ export default {
     AccountDelete,
     AutoResolve,
     AudioTranscription,
+    ChatwootReplyReplay,
+    FaqTraining,
     SectionLayout,
+    WikiLearningSchedule,
     WithLabel,
     NextInput,
   },
@@ -241,6 +247,9 @@ export default {
     </div>
     <AutoResolve v-if="showAutoResolutionConfig" />
     <AudioTranscription v-if="showAudioTranscriptionConfig" />
+    <ChatwootReplyReplay />
+    <FaqTraining />
+    <WikiLearningSchedule />
     <AccountId />
     <div v-if="!uiFlags.isFetchingItem && isOnChatwootCloud">
       <AccountDelete />

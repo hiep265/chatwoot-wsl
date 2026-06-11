@@ -56,6 +56,7 @@ describe('TraceBubble', () => {
       },
     });
 
+    expect(wrapper.text()).toContain('Session Trace');
     expect(wrapper.get('[data-testid="trace-summary"]').text()).toContain(
       'Used ReadFile (wiki/index.md)'
     );
@@ -90,5 +91,48 @@ describe('TraceBubble', () => {
       'File not found'
     );
     expect(wrapper.find('[data-testid="trace-detail"]').exists()).toBe(false);
+  });
+
+  it('summarizes context metrics rows for staff', () => {
+    const wrapper = mountTrace({
+      contentAttributes: {
+        traceType: 'kimi_context_metrics',
+        metrics: {
+          phase: 'step_total',
+          tokenCount: 213421,
+          maxContextSize: 262144,
+          reservedContextSize: 50000,
+          contextUsage: 0.814,
+        },
+      },
+    });
+
+    expect(wrapper.get('[data-testid="trace-summary"]').text()).toContain(
+      'Context 81.4% · 213421/262144 · reserve 50000'
+    );
+  });
+
+  it('summarizes compaction lifecycle rows for staff', async () => {
+    const wrapper = mountTrace({
+      contentAttributes: {
+        traceType: 'kimi_compaction_event',
+        compaction: {
+          phase: 'end',
+          reason: 'context_limit_reached',
+          messageCountBefore: 37,
+          messageCountAfter: 3,
+        },
+      },
+    });
+
+    expect(wrapper.get('[data-testid="trace-summary"]').text()).toContain(
+      'Compaction completed · 37 -> 3 messages'
+    );
+
+    await wrapper.get('[data-testid="trace-toggle"]').trigger('click');
+
+    expect(wrapper.get('[data-testid="trace-detail"]').text()).toContain(
+      'context_limit_reached'
+    );
   });
 });

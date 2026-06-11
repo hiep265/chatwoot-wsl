@@ -228,6 +228,28 @@ RSpec.describe Message do
       expect(conversation.waiting_since).to eq conversation.created_at
     end
 
+    it 'keeps session trace messages as internal traces without reopening or sending delivery jobs' do
+      conversation.update!(status: :resolved, first_reply_created_at: nil)
+
+      expect do
+        create(
+          :message,
+          conversation: conversation,
+          account: conversation.account,
+          inbox: conversation.inbox,
+          message_type: :session_trace,
+          private: true,
+          sender: nil,
+          content: 'internal trace block'
+        )
+      end.not_to have_enqueued_job(SendReplyJob)
+
+      conversation.reload
+
+      expect(conversation).to be_resolved
+      expect(conversation.first_reply_created_at).to be_nil
+    end
+
     it 'does not update the conversation first reply created at if the message is a private message' do
       expect(conversation.first_reply_created_at).to be_nil
       expect(conversation.waiting_since).to eq conversation.created_at

@@ -1,11 +1,19 @@
 # ref: https://github.com/jgorset/facebook-messenger#make-a-configuration-provider
 class ChatwootFbProvider < Facebook::Messenger::Configuration::Providers::Base
-  def valid_verify_token?(_verify_token)
-    GlobalConfigService.load('FB_VERIFY_TOKEN', '')
+  def valid_verify_token?(verify_token)
+    return false if verify_token.blank?
+
+    facebook_verify_tokens.include?(verify_token)
   end
 
-  def app_secret_for(_page_id)
-    GlobalConfigService.load('FB_APP_SECRET', '')
+  def app_secret_for(page_id)
+    # Resolve per-account app_secret if the Facebook page belongs to an account with custom config
+    fb_page = Channel::FacebookPage.where(page_id: page_id).first
+    if fb_page&.account
+      AccountSocialAppConfigResolver.new(fb_page.account).load('FB_APP_SECRET', '')
+    else
+      GlobalConfigService.load('FB_APP_SECRET', '')
+    end
   end
 
   def access_token_for(page_id)
@@ -16,6 +24,13 @@ class ChatwootFbProvider < Facebook::Messenger::Configuration::Providers::Base
 
   def bot
     Chatwoot::Bot
+  end
+
+  def facebook_verify_tokens
+    global_token = GlobalConfigService.load('FB_VERIFY_TOKEN', '')
+    account_tokens = AccountSocialAppConfig.where(provider: 'facebook').filter_map(&:verify_token)
+
+    ([global_token] + account_tokens).compact_blank
   end
 end
 

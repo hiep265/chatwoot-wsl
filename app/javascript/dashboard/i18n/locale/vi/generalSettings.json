@@ -104,6 +104,51 @@
           "ERROR": "Failed to update audio transcription setting"
         }
       },
+      "CHATWOOT_REPLY_REPLAY": {
+        "TITLE": "Phát lại webhook AI chưa được trả lời",
+        "NOTE": "Khi bật, Chatwoot sẽ gửi lại conversation chưa có public reply xuống chatbotlevan mỗi 60 phút, miễn là khách vẫn đang chờ. Chỉ quét các conversation có tin nhắn chờ trả lời trong 24 giờ gần nhất.",
+        "STATUS": {
+          "REPEAT_INTERVAL": "Mỗi {minutes} phút",
+          "ACTIVE_WINDOW": "Trong {hours} giờ gần nhất"
+        },
+        "API": {
+          "SUCCESS": "Đã cập nhật cài đặt replay",
+          "ERROR": "Không thể cập nhật cài đặt replay"
+        }
+      },
+      "FAQ_TRAINING": {
+        "TITLE": "Khóa đào tạo Hỏi đáp thường gặp",
+        "NOTE": "Chạy FAQ learning từ các conversation gần đây ngay trong trang cài đặt tài khoản.",
+        "DAYS_LABEL": "Số ngày hội thoại dùng để học",
+        "RUN_BUTTON": "Chạy FAQ training",
+        "REPORT": {
+          "CREATED": "Mới",
+          "DUPLICATES": "Trùng",
+          "CONFLICTS": "Xung đột",
+          "ERRORS": "Lỗi"
+        },
+        "API": {
+          "SUCCESS": "Đã gửi yêu cầu FAQ training",
+          "ERROR": "Không thể chạy FAQ training",
+          "INVALID_DAYS": "Số ngày training phải trong khoảng 1 đến 365"
+        }
+      },
+      "WIKI_LEARNING": {
+        "TITLE": "Lịch học Wiki",
+        "NOTE": "Xem và chỉnh lịch Wiki learning ngay tại đây, hoặc chạy ngay khi cần.",
+        "ENABLED_LABEL": "Bật lịch học Wiki",
+        "TIME_LABEL": "Giờ chạy",
+        "TIMEZONE_LABEL": "Múi giờ",
+        "SAVE_BUTTON": "Lưu lịch",
+        "RUN_NOW_BUTTON": "Chạy ngay",
+        "API": {
+          "SUCCESS": "Đã lưu lịch học Wiki",
+          "ERROR": "Không thể lưu lịch học Wiki",
+          "LOAD_ERROR": "Không thể tải lịch học Wiki",
+          "RUN_NOW_SUCCESS": "Đã gửi yêu cầu chạy Wiki ngay",
+          "RUN_NOW_ERROR": "Không thể chạy Wiki ngay"
+        }
+      },
       "AUTO_RESOLVE_DURATION": {
         "LABEL": "Inactivity duration for resolution",
         "HELP": "Duration after a conversation should auto resolve if there is no activity",

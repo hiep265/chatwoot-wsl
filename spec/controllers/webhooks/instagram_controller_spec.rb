@@ -20,6 +20,16 @@ RSpec.describe 'Webhooks::InstagramController', type: :request do
         expect(response.body).to include '123456'
       end
     end
+
+    it 'returns challenge when an account-level verify token is valid' do
+      account = create(:account)
+      create(:account_social_app_config, account: account, provider: 'instagram', verify_token: 'account_verify_token')
+
+      get '/webhooks/instagram/verify',
+          params: { 'hub.challenge' => 'account-challenge', 'hub.mode' => 'subscribe', 'hub.verify_token' => 'account_verify_token' }
+
+      expect(response.body).to include 'account-challenge'
+    end
   end
 
   describe 'POST /webhooks/instagram' do

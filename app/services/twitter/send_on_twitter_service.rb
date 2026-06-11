@@ -15,12 +15,13 @@ class Twitter::SendOnTwitterService < Base::SendOnChannelService
 
   def twitter_client
     Twitty::Facade.new do |config|
-      config.consumer_key = ENV.fetch('TWITTER_CONSUMER_KEY', nil)
-      config.consumer_secret = ENV.fetch('TWITTER_CONSUMER_SECRET', nil)
+      resolver = AccountSocialAppConfigResolver.new(message.account)
+      config.consumer_key = resolver.load('TWITTER_CONSUMER_KEY', nil) || ENV.fetch('TWITTER_CONSUMER_KEY', nil)
+      config.consumer_secret = resolver.load('TWITTER_CONSUMER_SECRET', nil) || ENV.fetch('TWITTER_CONSUMER_SECRET', nil)
       config.access_token = channel.twitter_access_token
       config.access_token_secret = channel.twitter_access_token_secret
       config.base_url = 'https://api.twitter.com'
-      config.environment = ENV.fetch('TWITTER_ENVIRONMENT', '')
+      config.environment = resolver.load('TWITTER_ENVIRONMENT', '') || ENV.fetch('TWITTER_ENVIRONMENT', '')
     end
   end
 
