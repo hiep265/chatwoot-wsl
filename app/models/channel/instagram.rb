@@ -44,15 +44,23 @@ class Channel::Instagram < ApplicationRecord
 
   def subscribe
     # ref https://developers.facebook.com/docs/instagram-platform/webhooks#enable-subscriptions
-    HTTParty.post(
+    response = HTTParty.post(
       "https://graph.instagram.com/v22.0/#{instagram_id}/subscribed_apps",
       query: {
-        subscribed_fields: %w[messages message_reactions messaging_seen],
+        subscribed_fields: %w[messages message_reactions messaging_seen comments],
         access_token: access_token
       }
     )
+    unless response.success?
+      Rails.logger.warn(
+        "[Instagram] subscribe_failed instagram_id=#{instagram_id} " \
+        "status=#{response.code} body=#{response.body}"
+      )
+    end
+
+    response
   rescue StandardError => e
-    Rails.logger.debug { "Rescued: #{e.inspect}" }
+    Rails.logger.warn("[Instagram] subscribe_error instagram_id=#{instagram_id} error=#{e.inspect}")
     true
   end
 
